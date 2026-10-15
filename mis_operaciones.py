@@ -41,7 +41,57 @@ import operaciones_originales as orig
 # comprobad con su EXPLAIN por qué no hace falta tocarla.
 # =====================================================================
 def pg_L1(cur, p):
-    raise NotImplementedError
+    """Ficha de producto.
+
+    Cambios respecto del original (ver 05_pg_mejorado.sql, bloque L1):
+      * contador, nota y histograma salen de resena_resumen (1 fila)
+        en vez de recorrer todas las reseñas del producto;
+      * el carrusel sale de mv_top_categoria (7 filas por categoría)
+        en vez de recorrer la tabla resena entera;
+      * la ficha técnica va en una subconsulta: ya no hace falta el
+        GROUP BY de toda la fila.
+    """
+    cur.execute("""
+    SELECT p.sku, p.nombre, p.marca, p.precio_base AS precio, p.peso_g, p.activo,
+           c.nombre AS categoria, d.nombre AS departamento,
+           v.vendedor_id, v.nombre AS vendedor, v.valoracion, v.provincia,
+           (SELECT coalesce(jsonb_object_agg(a.nombre,
+                        coalesce(pa.valor_texto, pa.valor_num::text, pa.valor_bool::text)),
+                        '{}'::jsonb)
+              FROM producto_atributo pa
+              JOIN dim_atributo a ON a.atributo_id = pa.atributo_id
+             WHERE pa.sku = p.sku)                                     AS ficha_tecnica,
+           coalesce(rr.n, 0)                                           AS n_resenas,
+           CASE WHEN rr.n > 0 THEN round(rr.suma::numeric / rr.n, 2) END AS nota_media,
+           CASE WHEN rr.n > 0 THEN jsonb_build_object(
+                    '1', rr.n1, '2', rr.n2, '3', rr.n3, '4', rr.n4, '5', rr.n5)
+           END                                                         AS histograma,
+           (SELECT jsonb_agg(to_jsonb(u))
+              FROM (SELECT r.puntuacion, r.titulo, r.texto, r.votos_utiles, r.ts,
+                           cl.nombre AS cliente
+                      FROM resena r
+                      JOIN cliente cl ON cl.cliente_id = r.cliente_id
+                     WHERE r.sku = p.sku
+                     ORDER BY r.ts DESC, r.resena_id DESC
+                     LIMIT 3) u)                                       AS resenas_recientes,
+           (SELECT jsonb_agg(jsonb_build_object(
+                       'sku', m.sku, 'nombre', m.nombre, 'precio_base', m.precio_base,
+                       'n_resenas', m.n_resenas, 'nota', m.nota) ORDER BY m.puesto)
+              FROM (SELECT * FROM mv_top_categoria m
+                     WHERE m.categoria_id = p.categoria_id AND m.sku <> p.sku
+                     ORDER BY m.puesto
+                     LIMIT 6) m)                                       AS relacionados
+    FROM dim_producto p
+    JOIN dim_categoria    c ON c.categoria_id    = p.categoria_id
+    JOIN dim_departamento d ON d.departamento_id = c.departamento_id
+    JOIN dim_vendedor     v ON v.vendedor_id     = p.vendedor_id
+    LEFT JOIN resena_resumen rr ON rr.sku = p.sku
+    WHERE p.sku = %(sku)s AND p.es_actual
+    """, p)
+    r = cur.fetchone()
+    r["resenas_recientes"] = r["resenas_recientes"] or []
+    r["relacionados"] = r["relacionados"] or []
+    return r
 
 
 def pg_L3(cur, p):
