@@ -101,7 +101,66 @@ def pg_L1(cur, p):
 
 
 def pg_L3(cur, p):
-    raise NotImplementedError
+    """Panel del vendedor.
+
+    Cambio respecto del original: la "salud del catálogo" (nota media y
+    reseñas de todos sus productos) sale de resena_resumen, 1 fila por
+    SKU, en vez de recorrer todas las reseñas de cada producto. Con el
+    vendedor 1 eran 32.459 productos x sus reseñas.
+
+    La parte de ventas (líneas del último año) se deja igual: L3 cuesta
+    0,4 h/día y acelerarla exigiría índices nuevos sobre pedido y
+    pedido_linea, que encarecen cada E1 (ver docs/R2_pg_mejorado.md).
+    """
+    cur.execute("""
+    WITH lineas_vendedor AS MATERIALIZED (
+        SELECT li.pedido_id, li.linea_num, li.cantidad, li.precio_unit,
+               li.importe_neto,
+               pr.sku, pr.nombre,
+               ped.ts_creacion, ped.estado_actual, ped.canal, ped.cliente_id
+        FROM dim_producto pr
+        JOIN pedido_linea li  ON li.producto_sk = pr.producto_sk
+        JOIN pedido       ped ON ped.pedido_id  = li.pedido_id
+        WHERE pr.vendedor_id = %(vendedor_id)s
+          AND ped.ts_creacion >= TIMESTAMPTZ '2025-09-02 00:00:00+02'
+          AND ped.estado_actual <> 'cancelado'
+    )
+    SELECT (SELECT count(DISTINCT pedido_id)  FROM lineas_vendedor) AS pedidos,
+           (SELECT round(sum(importe_neto),2) FROM lineas_vendedor) AS facturado,
+           (SELECT jsonb_agg(to_jsonb(t))
+              FROM (SELECT sku, nombre,
+                           sum(cantidad)              AS unidades,
+                           round(sum(importe_neto),2) AS importe
+                      FROM lineas_vendedor
+                     GROUP BY sku, nombre
+                     ORDER BY 4 DESC, sku
+                     LIMIT 10) t)                                   AS top_skus,
+           (SELECT jsonb_agg(to_jsonb(u))
+              FROM (SELECT lv.pedido_id, lv.ts_creacion, lv.estado_actual, lv.canal,
+                           cl.nombre AS cliente, cl.email,
+                           count(*)                      AS lineas,
+                           round(sum(lv.importe_neto),2) AS importe
+                      FROM lineas_vendedor lv
+                      JOIN cliente cl ON cl.cliente_id = lv.cliente_id
+                     GROUP BY lv.pedido_id, lv.ts_creacion, lv.estado_actual,
+                              lv.canal, cl.nombre, cl.email
+                     ORDER BY lv.ts_creacion DESC, lv.pedido_id DESC
+                     LIMIT 50) u)                                   AS ultimos_pedidos,
+           (SELECT to_jsonb(s)
+              FROM (SELECT count(*)                                     AS skus_vivos,
+                           round(avg(CASE WHEN rr.n > 0
+                                          THEN rr.suma::numeric / rr.n END), 2)
+                                                                        AS nota_media_catalogo,
+                           coalesce(sum(rr.n), 0)                       AS resenas_totales
+                      FROM dim_producto p
+                      LEFT JOIN resena_resumen rr ON rr.sku = p.sku
+                     WHERE p.vendedor_id = %(vendedor_id)s AND p.es_actual) s)
+                                                                    AS salud_catalogo
+    """, p)
+    r = cur.fetchone()
+    r["top_skus"] = r["top_skus"] or []
+    r["ultimos_pedidos"] = r["ultimos_pedidos"] or []
+    return r
 
 
 def pg_E1(cur, p):

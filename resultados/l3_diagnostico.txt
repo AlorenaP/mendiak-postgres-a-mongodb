@@ -1,0 +1,131 @@
+﻿SET
+=== Salud del catálogo · ORIGINAL · vendedor 1500 ===
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Aggregate (actual time=3.184..3.188 rows=1 loops=1)
+   Buffers: shared hit=596 read=158
+   ->  GroupAggregate (actual time=3.118..3.175 rows=87 loops=1)
+         Group Key: p.sku
+         Buffers: shared hit=596 read=158
+         ->  Sort (actual time=3.109..3.120 rows=367 loops=1)
+               Sort Key: p.sku
+               Sort Method: quicksort  Memory: 42kB
+               Buffers: shared hit=596 read=158
+               ->  Nested Loop Left Join (actual time=0.092..2.909 rows=367 loops=1)
+                     Buffers: shared hit=593 read=158
+                     ->  Bitmap Heap Scan on dim_producto p (actual time=0.060..0.518 rows=87 loops=1)
+                           Recheck Cond: (vendedor_id = 1500)
+                           Filter: es_actual
+                           Rows Removed by Filter: 20
+                           Heap Blocks: exact=123
+                           Buffers: shared hit=123 read=3
+                           ->  Bitmap Index Scan on ix_producto_vendedor (actual time=0.039..0.040 rows=545 loops=1)
+                                 Index Cond: (vendedor_id = 1500)
+                                 Buffers: shared hit=1 read=2
+                     ->  Index Scan using ix_resena_sku on resena r (actual time=0.013..0.027 rows=4 loops=87)
+                           Index Cond: (sku = p.sku)
+                           Buffers: shared hit=470 read=155
+ Planning:
+   Buffers: shared hit=245 read=30
+ Planning Time: 0.823 ms
+ Execution Time: 3.305 ms
+(27 rows)
+
+=== Salud del catálogo · MEJORADA · vendedor 1500 ===
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Aggregate (actual time=1.348..1.348 rows=1 loops=1)
+   Buffers: shared hit=376 read=95
+   ->  Nested Loop Left Join (actual time=0.044..1.312 rows=87 loops=1)
+         Buffers: shared hit=376 read=95
+         ->  Bitmap Heap Scan on dim_producto p (actual time=0.026..0.220 rows=87 loops=1)
+               Recheck Cond: (vendedor_id = 1500)
+               Filter: es_actual
+               Rows Removed by Filter: 20
+               Heap Blocks: exact=123
+               Buffers: shared hit=126
+               ->  Bitmap Index Scan on ix_producto_vendedor (actual time=0.014..0.014 rows=545 loops=1)
+                     Index Cond: (vendedor_id = 1500)
+                     Buffers: shared hit=3
+         ->  Index Scan using resena_resumen_pkey on resena_resumen rr (actual time=0.012..0.012 rows=1 loops=87)
+               Index Cond: (sku = p.sku)
+               Buffers: shared hit=250 read=95
+ Planning:
+   Buffers: shared hit=33 read=3
+ Planning Time: 0.213 ms
+ Execution Time: 1.372 ms
+(20 rows)
+
+=== Salud del catálogo · ORIGINAL · vendedor 1 ===
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Aggregate (actual time=171.236..171.452 rows=1 loops=1)
+   Buffers: shared hit=193304 read=52316
+   ->  Finalize HashAggregate (actual time=163.467..169.981 rows=32459 loops=1)
+         Group Key: p.sku
+         Batches: 1  Memory Usage: 7697kB
+         Buffers: shared hit=193304 read=52316
+         ->  Gather (actual time=151.350..155.573 rows=32459 loops=1)
+               Workers Planned: 2
+               Workers Launched: 2
+               Buffers: shared hit=193304 read=52316
+               ->  Partial HashAggregate (actual time=149.126..150.834 rows=10820 loops=3)
+                     Group Key: p.sku
+                     Batches: 1  Memory Usage: 3601kB
+                     Buffers: shared hit=193304 read=52316
+                     Worker 0:  Batches: 1  Memory Usage: 3601kB
+                     Worker 1:  Batches: 1  Memory Usage: 3601kB
+                     ->  Nested Loop Left Join (actual time=1.689..139.022 rows=46791 loops=3)
+                           Buffers: shared hit=193304 read=52316
+                           ->  Parallel Bitmap Heap Scan on dim_producto p (actual time=1.642..12.255 rows=10820 loops=3)
+                                 Recheck Cond: (vendedor_id = 1)
+                                 Filter: es_actual
+                                 Rows Removed by Filter: 2182
+                                 Heap Blocks: exact=3142
+                                 Buffers: shared hit=2759 read=6804
+                                 ->  Bitmap Index Scan on ix_producto_vendedor (actual time=2.607..2.607 rows=103923 loops=1)
+                                       Index Cond: (vendedor_id = 1)
+                                       Buffers: shared hit=139
+                           ->  Index Scan using ix_resena_sku on resena r (actual time=0.005..0.011 rows=4 loops=32459)
+                                 Index Cond: (sku = p.sku)
+                                 Buffers: shared hit=190545 read=45512
+ Planning:
+   Buffers: shared hit=8
+ Planning Time: 0.156 ms
+ Execution Time: 172.711 ms
+(34 rows)
+
+=== Salud del catálogo · MEJORADA · vendedor 1 ===
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate (actual time=40.294..42.609 rows=1 loops=1)
+   Buffers: shared hit=6945 read=6949
+   ->  Gather (actual time=40.284..42.600 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=6945 read=6949
+         ->  Partial Aggregate (actual time=37.865..37.868 rows=1 loops=3)
+               Buffers: shared hit=6945 read=6949
+               ->  Parallel Hash Right Join (actual time=14.434..36.098 rows=10820 loops=3)
+                     Hash Cond: (rr.sku = p.sku)
+                     Buffers: shared hit=6945 read=6949
+                     ->  Parallel Seq Scan on resena_resumen rr (actual time=0.021..8.978 rows=151880 loops=3)
+                           Buffers: shared hit=2 read=4257
+                     ->  Parallel Hash (actual time=14.228..14.229 rows=10820 loops=3)
+                           Buckets: 65536  Batches: 1  Memory Usage: 2080kB
+                           Buffers: shared hit=6871 read=2692
+                           ->  Parallel Bitmap Heap Scan on dim_producto p (actual time=2.295..12.522 rows=10820 loops=3)
+                                 Recheck Cond: (vendedor_id = 1)
+                                 Filter: es_actual
+                                 Rows Removed by Filter: 2182
+                                 Heap Blocks: exact=4280
+                                 Buffers: shared hit=6871 read=2692
+                                 ->  Bitmap Index Scan on ix_producto_vendedor (actual time=2.806..2.806 rows=103923 loops=1)
+                                       Index Cond: (vendedor_id = 1)
+                                       Buffers: shared hit=1 read=138
+ Planning:
+   Buffers: shared hit=18 read=2
+ Planning Time: 0.201 ms
+ Execution Time: 42.646 ms
+(29 rows)
+
