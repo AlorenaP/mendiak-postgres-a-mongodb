@@ -1,0 +1,123 @@
+# =====================================================================
+#  Mendiak v3 — PostgreSQL 17 + MongoDB 8 (+ mongo-express)
+#
+#  Regla de comparación justa: los dos motores tienen la MISMA caché
+#  propia (512 MB). Para medir con poca memoria se añade el fichero
+#  docker-compose.poca-memoria.yml (ver más abajo).
+#
+#  MongoDB arranca como replica set de un solo nodo ("rs0"): sin eso no
+#  hay transacciones multi-documento.
+# =====================================================================
+services:
+  postgres:
+    image: postgres:17
+    container_name: mendiak-pg
+    shm_size: 1gb
+    environment:
+      POSTGRES_USER: mendiak
+      POSTGRES_PASSWORD: mendiak
+      POSTGRES_DB: mendiak
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - checkpoint_timeout=30min
+      - -c
+      - random_page_cost=1.5
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./:/scripts:ro
+      - intercambio:/intercambio
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mendiak"]
+      interval: 5s
+      retries: 20
+
+  mongo:
+    image: mongo:8
+    container_name: mendiak-mongo
+    command: ["--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.5"]
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongodata:/data/db
+      - ./:/scripts:ro
+      - intercambio:/intercambio
+    healthcheck:
+      # Inicia el replica set la primera vez y espera a que sea primario.
+      test: ["CMD", "mongosh", "--quiet", "--eval",
+             "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27017'}]}) }; if (!db.hello().isWritablePrimary) quit(1)"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 10s
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: mendiak-mongo-ui
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: on-failure
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017/?directConnection=true
+      ME_CONFIG_BASICAUTH: "false"
+    ports:
+      - "8081:8081"
+
+  # Banco de pruebas: mide las operaciones en los dos motores con el
+  # mismo cliente. Solo arranca cuando lo pedís:
+  #   docker compose run --rm banco medir
+  banco:
+    build:
+      context: .
+      dockerfile: Dockerfile.banco
+    profiles: ["banco"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment:
+      PG_DSN: postgresql://mendiak:mendiak@postgres:5432/mendiak
+      MONGO_URI: mongodb://mongo:27017/?directConnection=true
+    volumes:
+      - ./:/scripts
+
+volumes:
+  pgdata:
+  mongodata:
+  intercambio:     # carpeta compartida para pasar ficheros de PG a Mongo
+
+# =====================================================================
+# Requisitos: 8 GB de RAM y 15 GB libres de disco.
+#
+# Puesta en marcha
+#   docker compose up -d
+#   docker exec -it mendiak-pg psql -U mendiak -d mendiak -f /scripts/01_esquema.sql
+#   docker exec -it mendiak-pg psql -U mendiak -d mendiak -f /scripts/02_carga_datos.sql
+#   docker exec -it mendiak-pg psql -U mendiak -d mendiak -c "CREATE EXTENSION pg_stat_statements;"
+#
+# Conexiones desde vuestro equipo
+#   psql -h localhost -U mendiak -d mendiak                 (contraseña: mendiak)
+#   mongosh "mongodb://localhost:27017/mendiak?directConnection=true"
+#   http://localhost:8081                                    (mongo-express)
+#
+# Medir con poca memoria (los datos no caben en RAM)
+#   docker compose -f docker-compose.yml -f docker-compose.poca-memoria.yml up -d
+# Volver al modo normal
+#   docker compose up -d
+# =====================================================================

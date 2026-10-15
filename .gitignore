@@ -1,0 +1,27 @@
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- Secretos y configuración local ---
+.env
+*.local.yml
+
+# --- Material del curso con derechos del profesor ---
+# Quita estas líneas solo si el profesor autoriza publicarlo
+*.pdf
+
+# --- Volcados y ficheros pesados de datos ---
+*.dump
+*.backup
+*.bson
+*.jsonl
+intercambio/
+
+# --- Sistema y editores ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

@@ -1,0 +1,34 @@
+# =====================================================================
+#  Modo "poca memoria": cada motor tiene 1 GB en total (su caché + la
+#  caché de disco del sistema). Los datos ocupan unas 3 veces más, así
+#  que NO caben en memoria, como pasa en producción.
+#
+#  Se usa SIEMPRE junto al fichero principal:
+#    docker compose -f docker-compose.yml -f docker-compose.poca-memoria.yml up -d
+#  Los datos no se pierden: están en los volúmenes.
+# =====================================================================
+services:
+  postgres:
+    mem_limit: 1g
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - checkpoint_timeout=30min
+      - -c
+      - random_page_cost=1.5
+
+  mongo:
+    mem_limit: 1g
+    command: ["--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]

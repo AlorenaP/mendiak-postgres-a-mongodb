@@ -1,0 +1,6 @@
+# Imagen del banco de pruebas: Python con los dos drivers.
+# Se construye sola la primera vez que ejecutáis "docker compose run --rm banco ...".
+FROM python:3.12-slim
+RUN pip install --no-cache-dir "psycopg[binary]==3.2.9" "pymongo==4.13.2" tzdata
+WORKDIR /scripts
+ENTRYPOINT ["python", "banco_pruebas.py"]

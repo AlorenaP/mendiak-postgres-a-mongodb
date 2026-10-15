@@ -1,0 +1,14 @@
+# Los scripts se ejecutan dentro de contenedores Linux:
+# se guardan siempre con saltos de línea de Linux (LF), también en Windows.
+* text=auto eol=lf
+
+*.sql        text eol=lf
+*.py         text eol=lf
+*.yml        text eol=lf
+*.md         text eol=lf
+*.csv        text eol=lf
+*.js         text eol=lf
+Dockerfile*  text eol=lf
+
+*.png binary
+*.pdf binary
