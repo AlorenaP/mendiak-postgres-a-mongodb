@@ -1,0 +1,21 @@
+﻿SET
+=== 1. Cliente 1: lo que hay frente a lo que cuenta el paso 6 ===
+ pedidos_reales | pedidos_segun_e1 | gasto_real | gasto_segun_e1 
+----------------+------------------+------------+----------------
+           3834 |            11120 | 5412703.35 |    37413846.54
+(1 row)
+
+=== 2. Clientes a los que el paso 6 asignaría un segmento incorrecto ===
+ segmento_correcto | segmento_con_error | clientes 
+-------------------+--------------------+----------
+ nuevo             | premium            |    52176
+ nuevo             | recurrente         |     3018
+ recurrente        | premium            |     1289
+(3 rows)
+
+=== 3. Total de clientes afectados y porcentaje sobre los que tienen pedidos ===
+ clientes_mal | clientes_con_pedidos | porcentaje 
+--------------+----------------------+------------
+        56483 |               161593 |       35.0
+(1 row)
+

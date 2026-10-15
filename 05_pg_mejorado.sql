@@ -131,3 +131,24 @@ CREATE UNIQUE INDEX ux_mv_top_categoria ON mv_top_categoria (categoria_id, puest
 
 -- Refresco cada hora (con pg_cron o un cron externo):
 --   REFRESH MATERIALIZED VIEW CONCURRENTLY mendiak.mv_top_categoria;
+
+
+-- =====================================================================
+--  E1 · CREAR PEDIDO
+--
+--  Error: el paso 6 calcula el segmento con JOIN a pedido_linea, así que
+--  cuenta LÍNEAS en vez de pedidos y suma el total de cada pedido una
+--  vez por línea (diagnóstico en 05_e1_diagnostico.sql).
+--
+--  Corrección (en pg_E1 de mis_operaciones.py): contar y sumar solo
+--  sobre pedido. Para que esa consulta no tenga que visitar la tabla
+--  (los pedidos de un cliente están repartidos por el disco), el índice
+--  por cliente pasa a CUBRIR también estado e importe: se resuelve con
+--  un Index Only Scan. Se amplía el índice existente en lugar de crear
+--  otro, para no añadir coste a cada INSERT de pedido. L4 lo sigue
+--  usando igual (mismas columnas de búsqueda y de orden).
+-- =====================================================================
+DROP INDEX IF EXISTS ix_pedido_cliente;
+CREATE INDEX ix_pedido_cliente ON pedido (cliente_id, ts_creacion DESC)
+    INCLUDE (estado_actual, importe_total);
+VACUUM ANALYZE pedido;   -- mapa de visibilidad al día para el Index Only Scan
