@@ -1,0 +1,542 @@
+﻿SET
+Timing is on.
+                                                                       QUERY PLAN                                                                        
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+ GroupAggregate (actual time=1500.935..1500.949 rows=1 loops=1)
+   Group Key: p.producto_sk, c.nombre, d.nombre, v.vendedor_id
+   Buffers: shared hit=36718 read=32923
+   ->  Sort (actual time=801.584..801.591 rows=17 loops=1)
+         Sort Key: p.producto_sk, c.nombre, d.nombre, v.vendedor_id
+         Sort Method: quicksort  Memory: 27kB
+         Buffers: shared hit=19 read=5
+         ->  Hash Left Join (actual time=801.515..801.536 rows=17 loops=1)
+               Hash Cond: (pa.atributo_id = a.atributo_id)
+               Buffers: shared hit=10 read=5
+               ->  Nested Loop Left Join (actual time=801.460..801.476 rows=17 loops=1)
+                     Buffers: shared hit=9 read=5
+                     ->  Nested Loop (actual time=801.133..801.141 rows=1 loops=1)
+                           Buffers: shared hit=7 read=3
+                           ->  Nested Loop (actual time=780.792..780.799 rows=1 loops=1)
+                                 Buffers: shared hit=6 read=1
+                                 ->  Hash Join (actual time=780.772..780.778 rows=1 loops=1)
+                                       Hash Cond: (c.categoria_id = p.categoria_id)
+                                       Buffers: shared hit=4 read=1
+                                       ->  Seq Scan on dim_categoria c (actual time=0.008..0.012 rows=40 loops=1)
+                                             Buffers: shared hit=1
+                                       ->  Hash (actual time=780.742..780.743 rows=1 loops=1)
+                                             Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                             Buffers: shared hit=3 read=1
+                                             ->  Index Scan using ux_producto_sku_actual on dim_producto p (actual time=780.716..780.721 rows=1 loops=1)
+                                                   Index Cond: (sku = 'MEND-000123'::text)
+                                                   Buffers: shared hit=3 read=1
+                                 ->  Index Scan using dim_departamento_pkey on dim_departamento d (actual time=0.014..0.014 rows=1 loops=1)
+                                       Index Cond: (departamento_id = c.departamento_id)
+                                       Buffers: shared hit=2
+                           ->  Index Scan using dim_vendedor_pkey on dim_vendedor v (actual time=20.315..20.315 rows=1 loops=1)
+                                 Index Cond: (vendedor_id = p.vendedor_id)
+                                 Buffers: shared hit=1 read=2
+                     ->  Index Scan using producto_atributo_pkey on producto_atributo pa (actual time=0.312..0.316 rows=17 loops=1)
+                           Index Cond: (sku = 'MEND-000123'::text)
+                           Buffers: shared hit=2 read=2
+               ->  Hash (actual time=0.037..0.038 rows=60 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 11kB
+                     Buffers: shared hit=1
+                     ->  Seq Scan on dim_atributo a (actual time=0.012..0.019 rows=60 loops=1)
+                           Buffers: shared hit=1
+   SubPlan 1
+     ->  Aggregate (actual time=0.689..0.690 rows=1 loops=1)
+           Buffers: shared hit=3 read=3
+           ->  Index Only Scan using ix_resena_sku on resena r (actual time=0.430..0.654 rows=146 loops=1)
+                 Index Cond: (sku = p.sku)
+                 Heap Fetches: 0
+                 Buffers: shared hit=3 read=3
+   SubPlan 2
+     ->  Aggregate (actual time=1.143..1.145 rows=1 loops=1)
+           Buffers: shared hit=85 read=65
+           ->  Index Scan using ix_resena_sku on resena r_1 (actual time=0.029..1.089 rows=146 loops=1)
+                 Index Cond: (sku = p.sku)
+                 Buffers: shared hit=85 read=65
+   SubPlan 3
+     ->  Aggregate (actual time=0.173..0.174 rows=1 loops=1)
+           Buffers: shared hit=150
+           ->  HashAggregate (actual time=0.147..0.149 rows=5 loops=1)
+                 Group Key: r_2.puntuacion
+                 Batches: 1  Memory Usage: 24kB
+                 Buffers: shared hit=150
+                 ->  Index Scan using ix_resena_sku on resena r_2 (actual time=0.019..0.108 rows=146 loops=1)
+                       Index Cond: (sku = p.sku)
+                       Buffers: shared hit=150
+   SubPlan 4
+     ->  Aggregate (actual time=1.290..1.292 rows=1 loops=1)
+           Buffers: shared hit=12 read=6
+           ->  Subquery Scan on u (actual time=0.491..1.222 rows=3 loops=1)
+                 Buffers: shared hit=12 read=6
+                 ->  Limit (actual time=0.476..1.201 rows=3 loops=1)
+                       Buffers: shared hit=12 read=6
+                       ->  Nested Loop (actual time=0.475..1.198 rows=3 loops=1)
+                             Buffers: shared hit=12 read=6
+                             ->  Index Scan using ix_resena_sku on resena r_3 (actual time=0.010..0.016 rows=3 loops=1)
+                                   Index Cond: (sku = p.sku)
+                                   Buffers: shared hit=6
+                             ->  Index Scan using cliente_pkey on cliente cl (actual time=0.385..0.385 rows=1 loops=3)
+                                   Index Cond: (cliente_id = r_3.cliente_id)
+                                   Buffers: shared hit=6 read=6
+   SubPlan 5
+     ->  Aggregate (actual time=695.964..695.967 rows=1 loops=1)
+           Buffers: shared hit=36449 read=32844
+           ->  Subquery Scan on rel (actual time=695.917..695.923 rows=6 loops=1)
+                 Buffers: shared hit=36449 read=32844
+                 ->  Limit (actual time=695.897..695.900 rows=6 loops=1)
+                       Buffers: shared hit=36449 read=32844
+                       ->  Sort (actual time=695.895..695.898 rows=6 loops=1)
+                             Sort Key: (avg(r2.puntuacion)) DESC, (count(r2.resena_id)) DESC, p2.sku
+                             Sort Method: top-N heapsort  Memory: 26kB
+                             Buffers: shared hit=36449 read=32844
+                             ->  HashAggregate (actual time=690.313..693.604 rows=10677 loops=1)
+                                   Group Key: p2.sku, p2.nombre, p2.precio_base
+                                   Filter: (count(r2.resena_id) > 0)
+                                   Batches: 1  Memory Usage: 2449kB
+                                   Rows Removed by Filter: 581
+                                   Buffers: shared hit=36446 read=32844
+                                   ->  Hash Right Join (actual time=247.724..666.147 rows=48323 loops=1)
+                                         Hash Cond: (r2.sku = p2.sku)
+                                         Buffers: shared hit=36446 read=32844
+                                         ->  Seq Scan on resena r2 (actual time=0.012..190.619 rows=2100000 loops=1)
+                                               Buffers: shared hit=31588 read=31309
+                                         ->  Hash (actual time=247.662..247.663 rows=11258 loops=1)
+                                               Buckets: 16384  Batches: 1  Memory Usage: 862kB
+                                               Buffers: shared hit=4858 read=1535
+                                               ->  Bitmap Heap Scan on dim_producto p2 (actual time=4.074..243.062 rows=11258 loops=1)
+                                                     Recheck Cond: ((categoria_id = p.categoria_id) AND es_actual)
+                                                     Filter: (activo AND (sku <> p.sku))
+                                                     Rows Removed by Filter: 768
+                                                     Heap Blocks: exact=6379
+                                                     Buffers: shared hit=4858 read=1535
+                                                     ->  Bitmap Index Scan on ix_producto_categoria (actual time=3.173..3.173 rows=12026 loops=1)
+                                                           Index Cond: (categoria_id = p.categoria_id)
+                                                           Buffers: shared hit=1 read=13
+ Planning:
+   Buffers: shared hit=625
+ Planning Time: 2.413 ms
+ Execution Time: 1517.987 ms
+(117 rows)
+
+Time: 1522.743 ms (00:01.523)
+                                                                        QUERY PLAN                                                                         
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Result (actual time=2028.748..2029.569 rows=1 loops=1)
+   Buffers: shared hit=367007 read=57432
+   CTE filtrados
+     ->  Gather (actual time=46.890..1961.079 rows=1233 loops=1)
+           Workers Planned: 2
+           Workers Launched: 2
+           Buffers: shared hit=361897 read=56825
+           ->  Nested Loop (actual time=30.139..1945.916 rows=411 loops=3)
+                 Join Filter: (f1.sku = f3.sku)
+                 Buffers: shared hit=361897 read=56825
+                 ->  Nested Loop (actual time=27.334..1930.119 rows=946 loops=3)
+                       Join Filter: (f1.sku = f2.sku)
+                       Buffers: shared hit=350577 read=56789
+                       ->  Hash Join (actual time=24.262..536.030 rows=3788 loops=3)
+                             Hash Cond: (p.categoria_id = c.categoria_id)
+                             Buffers: shared hit=316290 read=45616
+                             ->  Nested Loop (actual time=23.689..523.900 rows=25100 loops=3)
+                                   Buffers: shared hit=316191 read=45616
+                                   ->  Parallel Bitmap Heap Scan on producto_atributo f1 (actual time=23.648..253.477 rows=26695 loops=3)
+                                         Recheck Cond: ((atributo_id = 3) AND (valor_texto = 'negro'::text))
+                                         Heap Blocks: exact=14132
+                                         Buffers: shared hit=7 read=41458
+                                         ->  Bitmap Index Scan on ix_pa_texto (actual time=29.932..29.933 rows=80085 loops=1)
+                                               Index Cond: ((atributo_id = 3) AND (valor_texto = 'negro'::text))
+                                               Buffers: shared hit=3 read=65
+                                   ->  Index Scan using ux_producto_sku_actual on dim_producto p (actual time=0.009..0.009 rows=1 loops=80085)
+                                         Index Cond: (sku = f1.sku)
+                                         Filter: activo
+                                         Rows Removed by Filter: 0
+                                         Buffers: shared hit=316184 read=4158
+                             ->  Hash (actual time=0.026..0.026 rows=6 loops=3)
+                                   Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                   Buffers: shared hit=3
+                                   ->  Seq Scan on dim_categoria c (actual time=0.018..0.020 rows=6 loops=3)
+                                         Filter: (departamento_id = 1)
+                                         Rows Removed by Filter: 34
+                                         Buffers: shared hit=3
+                       ->  Index Scan using producto_atributo_pkey on producto_atributo f2 (actual time=0.367..0.367 rows=0 loops=11363)
+                             Index Cond: ((sku = p.sku) AND (atributo_id = 21))
+                             Filter: (valor_texto = 'unisex'::text)
+                             Rows Removed by Filter: 1
+                             Buffers: shared hit=34287 read=11173
+                 ->  Index Scan using producto_atributo_pkey on producto_atributo f3 (actual time=0.014..0.014 rows=0 loops=2839)
+                       Index Cond: ((sku = p.sku) AND (atributo_id = 1))
+                       Filter: ((valor_num >= '300'::numeric) AND (valor_num <= '2500'::numeric))
+                       Rows Removed by Filter: 1
+                       Buffers: shared hit=11320 read=36
+   InitPlan 2
+     ->  Aggregate (actual time=1962.345..1962.346 rows=1 loops=1)
+           Buffers: shared hit=361897 read=56825
+           ->  CTE Scan on filtrados (actual time=46.894..1961.648 rows=1233 loops=1)
+                 Buffers: shared hit=361897 read=56825
+   InitPlan 3
+     ->  Aggregate (actual time=0.787..0.789 rows=1 loops=1)
+           ->  Subquery Scan on t (actual time=0.563..0.582 rows=24 loops=1)
+                 ->  Limit (actual time=0.477..0.483 rows=24 loops=1)
+                       ->  Sort (actual time=0.475..0.478 rows=24 loops=1)
+                             Sort Key: filtrados_1.precio_base, filtrados_1.sku
+                             Sort Method: top-N heapsort  Memory: 27kB
+                             ->  CTE Scan on filtrados filtrados_1 (actual time=0.002..0.158 rows=1233 loops=1)
+   InitPlan 4
+     ->  Aggregate (actual time=65.390..65.393 rows=1 loops=1)
+           Buffers: shared hit=5110 read=607
+           ->  Subquery Scan on f (actual time=55.878..57.242 rows=3857 loops=1)
+                 Buffers: shared hit=5110 read=607
+                 ->  Sort (actual time=55.861..56.169 rows=3857 loops=1)
+                       Sort Key: a.nombre, (count(*)) DESC, (COALESCE(pa.valor_texto, (pa.valor_num)::text, (pa.valor_bool)::text))
+                       Sort Method: quicksort  Memory: 268kB
+                       Buffers: shared hit=5110 read=607
+                       ->  HashAggregate (actual time=49.780..50.381 rows=3857 loops=1)
+                             Group Key: a.nombre, COALESCE(pa.valor_texto, (pa.valor_num)::text, (pa.valor_bool)::text)
+                             Batches: 1  Memory Usage: 745kB
+                             Buffers: shared hit=5110 read=607
+                             ->  Hash Join (actual time=0.148..40.195 rows=20757 loops=1)
+                                   Hash Cond: (pa.atributo_id = a.atributo_id)
+                                   Buffers: shared hit=5110 read=607
+                                   ->  Nested Loop (actual time=0.058..33.730 rows=20757 loops=1)
+                                         Buffers: shared hit=5110 read=606
+                                         ->  CTE Scan on filtrados fl (actual time=0.001..0.307 rows=1233 loops=1)
+                                         ->  Index Scan using producto_atributo_pkey on producto_atributo pa (actual time=0.016..0.024 rows=17 loops=1233)
+                                               Index Cond: (sku = fl.sku)
+                                               Buffers: shared hit=5110 read=606
+                                   ->  Hash (actual time=0.058..0.058 rows=60 loops=1)
+                                         Buckets: 1024  Batches: 1  Memory Usage: 11kB
+                                         Buffers: shared read=1
+                                         ->  Seq Scan on dim_atributo a (actual time=0.017..0.024 rows=60 loops=1)
+                                               Buffers: shared read=1
+ Planning:
+   Buffers: shared hit=98 read=4
+ Planning Time: 3.471 ms
+ Execution Time: 2029.855 ms
+(91 rows)
+
+Time: 2036.293 ms (00:02.036)
+                                                                  QUERY PLAN                                                                  
+----------------------------------------------------------------------------------------------------------------------------------------------
+ Result (actual time=5113.643..5114.238 rows=1 loops=1)
+   Buffers: shared hit=931987 read=142031
+   CTE lineas_vendedor
+     ->  Gather (actual time=110.602..2985.374 rows=38354 loops=1)
+           Workers Planned: 2
+           Workers Launched: 2
+           Buffers: shared hit=683599 read=38948
+           ->  Nested Loop (actual time=89.312..2972.351 rows=12785 loops=3)
+                 Buffers: shared hit=683599 read=38948
+                 ->  Nested Loop (actual time=14.690..1787.403 rows=39745 loops=3)
+                       Buffers: shared hit=221054 read=24551
+                       ->  Parallel Bitmap Heap Scan on dim_producto pr (actual time=6.069..36.797 rows=13002 loops=3)
+                             Recheck Cond: (vendedor_id = 1)
+                             Heap Blocks: exact=3101
+                             Buffers: shared hit=8076 read=1311
+                             ->  Bitmap Index Scan on ix_producto_vendedor (actual time=16.160..16.160 rows=39005 loops=1)
+                                   Index Cond: (vendedor_id = 1)
+                                   Buffers: shared hit=1 read=37
+                       ->  Index Scan using ix_linea_producto on pedido_linea li (actual time=0.032..0.132 rows=3 loops=39005)
+                             Index Cond: (producto_sk = pr.producto_sk)
+                             Buffers: shared hit=212978 read=23240
+                 ->  Index Scan using pedido_pkey on pedido ped (actual time=0.029..0.029 rows=0 loops=119235)
+                       Index Cond: (pedido_id = li.pedido_id)
+                       Filter: ((ts_creacion >= '2025-09-01 22:00:00+00'::timestamp with time zone) AND (estado_actual <> 'cancelado'::text))
+                       Rows Removed by Filter: 1
+                       Buffers: shared hit=462545 read=14397
+   InitPlan 2
+     ->  Aggregate (actual time=3127.884..3127.885 rows=1 loops=1)
+           Buffers: shared hit=683599 read=38948
+           ->  Sort (actual time=3121.163..3123.179 rows=38354 loops=1)
+                 Sort Key: lineas_vendedor.pedido_id
+                 Sort Method: quicksort  Memory: 1537kB
+                 Buffers: shared hit=683599 read=38948
+                 ->  CTE Scan on lineas_vendedor (actual time=110.613..3014.812 rows=38354 loops=1)
+                       Buffers: shared hit=683599 read=38948
+   InitPlan 3
+     ->  Aggregate (actual time=5.936..5.936 rows=1 loops=1)
+           ->  CTE Scan on lineas_vendedor lineas_vendedor_1 (actual time=0.025..2.364 rows=38354 loops=1)
+   InitPlan 4
+     ->  Aggregate (actual time=38.087..38.090 rows=1 loops=1)
+           ->  Subquery Scan on t (actual time=37.574..37.592 rows=10 loops=1)
+                 ->  Limit (actual time=37.462..37.468 rows=10 loops=1)
+                       ->  Sort (actual time=37.457..37.460 rows=10 loops=1)
+                             Sort Key: (round(sum(lineas_vendedor_2.importe_neto), 2)) DESC, lineas_vendedor_2.sku
+                             Sort Method: top-N heapsort  Memory: 26kB
+                             ->  HashAggregate (actual time=23.384..32.390 rows=19948 loops=1)
+                                   Group Key: lineas_vendedor_2.sku, lineas_vendedor_2.nombre
+                                   Batches: 1  Memory Usage: 11793kB
+                                   ->  CTE Scan on lineas_vendedor lineas_vendedor_2 (actual time=0.001..2.904 rows=38354 loops=1)
+   InitPlan 5
+     ->  Aggregate (actual time=386.007..386.011 rows=1 loops=1)
+           Buffers: shared hit=103084 read=2943
+           ->  Subquery Scan on u (actual time=385.631..385.664 rows=50 loops=1)
+                 Buffers: shared hit=103084 read=2943
+                 ->  Limit (actual time=385.529..385.541 rows=50 loops=1)
+                       Buffers: shared hit=103084 read=2943
+                       ->  Sort (actual time=385.519..385.528 rows=50 loops=1)
+                             Sort Key: lv.ts_creacion DESC, lv.pedido_id DESC
+                             Sort Method: top-N heapsort  Memory: 36kB
+                             Buffers: shared hit=103084 read=2943
+                             ->  HashAggregate (actual time=357.816..375.091 rows=32903 loops=1)
+                                   Group Key: lv.ts_creacion, lv.pedido_id, lv.estado_actual, lv.canal, cl.nombre, cl.email
+                                   Batches: 1  Memory Usage: 17945kB
+                                   Buffers: shared hit=103081 read=2943
+                                   ->  Nested Loop (actual time=3.892..298.545 rows=38354 loops=1)
+                                         Buffers: shared hit=103081 read=2943
+                                         ->  CTE Scan on lineas_vendedor lv (actual time=0.002..4.770 rows=38354 loops=1)
+                                         ->  Memoize (actual time=0.007..0.007 rows=1 loops=38354)
+                                               Cache Key: lv.cliente_id
+                                               Cache Mode: logical
+                                               Hits: 11848  Misses: 26506  Evictions: 0  Overflows: 0  Memory Usage: 3754kB
+                                               Buffers: shared hit=103081 read=2943
+                                               ->  Index Scan using cliente_pkey on cliente cl (actual time=0.009..0.009 rows=1 loops=26506)
+                                                     Index Cond: (cliente_id = lv.cliente_id)
+                                                     Buffers: shared hit=103081 read=2943
+   InitPlan 6
+     ->  Subquery Scan on s (actual time=1501.208..1501.444 rows=1 loops=1)
+           Buffers: shared hit=145304 read=100140
+           ->  Aggregate (actual time=1501.099..1501.335 rows=1 loops=1)
+                 Buffers: shared hit=145304 read=100140
+                 ->  Finalize HashAggregate (actual time=1490.237..1499.206 rows=32459 loops=1)
+                       Group Key: p.sku
+                       Batches: 1  Memory Usage: 7697kB
+                       Buffers: shared hit=145304 read=100140
+                       ->  Gather (actual time=1464.066..1471.571 rows=32459 loops=1)
+                             Workers Planned: 2
+                             Workers Launched: 2
+                             Buffers: shared hit=145304 read=100140
+                             ->  Partial HashAggregate (actual time=1436.458..1438.931 rows=10820 loops=3)
+                                   Group Key: p.sku
+                                   Batches: 1  Memory Usage: 3601kB
+                                   Buffers: shared hit=145304 read=100140
+                                   Worker 0:  Batches: 1  Memory Usage: 3601kB
+                                   Worker 1:  Batches: 1  Memory Usage: 3601kB
+                                   ->  Nested Loop Left Join (actual time=10.117..1401.916 rows=46791 loops=3)
+                                         Buffers: shared hit=145304 read=100140
+                                         ->  Parallel Bitmap Heap Scan on dim_producto p (actual time=9.616..46.023 rows=10820 loops=3)
+                                               Recheck Cond: (vendedor_id = 1)
+                                               Filter: es_actual
+                                               Rows Removed by Filter: 2182
+                                               Heap Blocks: exact=3447
+                                               Buffers: shared hit=511 read=8876
+                                               ->  Bitmap Index Scan on ix_producto_vendedor (actual time=3.340..3.340 rows=39005 loops=1)
+                                                     Index Cond: (vendedor_id = 1)
+                                                     Buffers: shared hit=38
+                                         ->  Index Scan using ix_resena_sku on resena r (actual time=0.101..0.123 rows=4 loops=32459)
+                                               Index Cond: (sku = p.sku)
+                                               Buffers: shared hit=144793 read=91264
+ Planning:
+   Buffers: shared hit=197 read=31
+ Planning Time: 4.180 ms
+ Execution Time: 5125.470 ms
+(112 rows)
+
+Time: 5136.976 ms (00:05.137)
+                                                                  QUERY PLAN                                                                  
+----------------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=0.721..2.661 rows=10 loops=1)
+   Buffers: shared hit=103 read=111
+   ->  Result (actual time=0.720..2.656 rows=10 loops=1)
+         Buffers: shared hit=103 read=111
+         ->  Incremental Sort (actual time=0.372..0.375 rows=10 loops=1)
+               Sort Key: p.ts_creacion DESC, p.pedido_id DESC
+               Presorted Key: p.ts_creacion
+               Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 27kB  Peak Memory: 27kB
+               Buffers: shared read=14
+               ->  Index Scan using ix_pedido_cliente on pedido p (actual time=0.131..0.283 rows=11 loops=1)
+                     Index Cond: (cliente_id = 1)
+                     Buffers: shared read=14
+         SubPlan 1
+           ->  Aggregate (actual time=0.133..0.133 rows=1 loops=10)
+                 Buffers: shared hit=78 read=58
+                 ->  Nested Loop (actual time=0.063..0.105 rows=2 loops=10)
+                       Buffers: shared hit=78 read=58
+                       ->  Index Scan using pedido_linea_pedido_id_linea_num_key on pedido_linea l (actual time=0.034..0.035 rows=2 loops=10)
+                             Index Cond: (pedido_id = p.pedido_id)
+                             Buffers: shared hit=21 read=19
+                       ->  Index Scan using dim_producto_pkey on dim_producto pr (actual time=0.028..0.028 rows=1 loops=24)
+                             Index Cond: (producto_sk = l.producto_sk)
+                             Buffers: shared hit=57 read=39
+         SubPlan 2
+           ->  Aggregate (actual time=0.092..0.092 rows=1 loops=10)
+                 Buffers: shared hit=25 read=39
+                 ->  Index Scan using ix_hist_pedido on pedido_estado_hist h (actual time=0.051..0.077 rows=3 loops=10)
+                       Index Cond: (pedido_id = p.pedido_id)
+                       Buffers: shared hit=25 read=39
+ Planning:
+   Buffers: shared hit=48 read=23
+ Planning Time: 2.087 ms
+ Execution Time: 2.749 ms
+(33 rows)
+
+Time: 7.273 ms
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Index Scan using pedido_pkey on pedido p (actual time=2.146..2.149 rows=1 loops=1)
+   Index Cond: (pedido_id = 'PED-00412345'::text)
+   Buffers: shared hit=5 read=13
+   SubPlan 1
+     ->  Aggregate (actual time=0.994..0.995 rows=1 loops=1)
+           Buffers: shared hit=4 read=4
+           ->  Nested Loop (actual time=0.971..0.973 rows=1 loops=1)
+                 Buffers: shared hit=4 read=4
+                 ->  Index Scan using pedido_linea_pedido_id_linea_num_key on pedido_linea l (actual time=0.753..0.754 rows=1 loops=1)
+                       Index Cond: (pedido_id = p.pedido_id)
+                       Buffers: shared hit=1 read=3
+                 ->  Index Scan using dim_producto_pkey on dim_producto pr (actual time=0.212..0.212 rows=1 loops=1)
+                       Index Cond: (producto_sk = l.producto_sk)
+                       Buffers: shared hit=3 read=1
+   SubPlan 2
+     ->  Aggregate (actual time=1.015..1.015 rows=1 loops=1)
+           Buffers: shared hit=1 read=5
+           ->  Index Scan using ix_hist_pedido on pedido_estado_hist h (actual time=0.577..0.977 rows=3 loops=1)
+                 Index Cond: (pedido_id = p.pedido_id)
+                 Buffers: shared hit=1 read=5
+ Planning:
+   Buffers: shared hit=22
+ Planning Time: 0.428 ms
+ Execution Time: 2.184 ms
+(24 rows)
+
+Time: 3.227 ms
+                                                                                                                   QUERY PLAN                                                                                                                    
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ GroupAggregate (actual time=918.126..4619.619 rows=79 loops=1)
+   Group Key: d.nombre, (date_trunc('month'::text, p.ts_creacion, 'Europe/Madrid'::text))
+   Group Key: d.nombre
+   Group Key: ()
+   Buffers: shared hit=7739 read=39495
+   ->  Gather Merge (actual time=897.052..1028.563 rows=569248 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=7739 read=39495
+         ->  Sort (actual time=868.326..886.895 rows=189749 loops=3)
+               Sort Key: d.nombre, (date_trunc('month'::text, p.ts_creacion, 'Europe/Madrid'::text))
+               Sort Method: quicksort  Memory: 18010kB
+               Buffers: shared hit=7739 read=39495
+               Worker 0:  Sort Method: quicksort  Memory: 17061kB
+               Worker 1:  Sort Method: quicksort  Memory: 16724kB
+               ->  Hash Join (actual time=386.260..747.727 rows=189749 loops=3)
+                     Hash Cond: (c.departamento_id = d.departamento_id)
+                     Buffers: shared hit=7658 read=39486
+                     ->  Hash Join (actual time=363.089..627.336 rows=189749 loops=3)
+                           Hash Cond: (pr.categoria_id = c.categoria_id)
+                           Buffers: shared hit=7599 read=39482
+                           ->  Parallel Hash Join (actual time=363.008..593.248 rows=189749 loops=3)
+                                 Hash Cond: (l.producto_sk = pr.producto_sk)
+                                 Buffers: shared hit=7597 read=39481
+                                 ->  Parallel Hash Join (actual time=270.416..408.299 rows=189749 loops=3)
+                                       Hash Cond: (l.pedido_id = p.pedido_id)
+                                       Buffers: shared hit=48 read=37498
+                                       ->  Parallel Seq Scan on pedido_linea l (actual time=0.026..52.010 rows=591027 loops=3)
+                                             Buffers: shared hit=9 read=18271
+                                       ->  Parallel Hash (actual time=223.351..223.352 rows=64180 loops=3)
+                                             Buckets: 262144  Batches: 1  Memory Usage: 12640kB
+                                             Buffers: shared hit=13 read=19225
+                                             ->  Parallel Seq Scan on pedido p (actual time=81.976..203.467 rows=64180 loops=3)
+                                                   Filter: ((estado_actual <> 'cancelado'::text) AND (ts_creacion >= '2024-12-31 23:00:00+00'::timestamp with time zone) AND (ts_creacion < '2025-12-31 23:00:00+00'::timestamp with time zone))
+                                                   Rows Removed by Filter: 135820
+                                                   Buffers: shared hit=13 read=19225
+                                 ->  Parallel Hash (actual time=90.725..90.726 rows=192000 loops=3)
+                                       Buckets: 1048576  Batches: 1  Memory Usage: 35264kB
+                                       Buffers: shared hit=7525 read=1983
+                                       ->  Parallel Seq Scan on dim_producto pr (actual time=0.043..28.482 rows=192000 loops=3)
+                                             Buffers: shared hit=7525 read=1983
+                           ->  Hash (actual time=0.066..0.067 rows=40 loops=3)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 10kB
+                                 Buffers: shared hit=2 read=1
+                                 ->  Seq Scan on dim_categoria c (actual time=0.053..0.057 rows=40 loops=3)
+                                       Buffers: shared hit=2 read=1
+                     ->  Hash (actual time=18.302..18.302 rows=6 loops=3)
+                           Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                           Buffers: shared hit=2 read=1
+                           ->  Seq Scan on dim_departamento d (actual time=18.282..18.285 rows=6 loops=3)
+                                 Buffers: shared hit=2 read=1
+ Planning:
+   Buffers: shared hit=28 read=12
+ Planning Time: 0.776 ms
+ Execution Time: 4622.296 ms
+(55 rows)
+
+Time: 4625.050 ms (00:04.625)
+BEGIN
+Time: 0.189 ms
+INSERT 0 1
+Time: 3.979 ms
+INSERT 0 3
+Time: 6.363 ms
+UPDATE 3
+Time: 5.728 ms
+UPDATE 1
+Time: 0.648 ms
+INSERT 0 1
+Time: 3.644 ms
+UPDATE 1
+Time: 754.476 ms
+DELETE 0
+Time: 2.098 ms
+ROLLBACK
+Time: 0.231 ms
+BEGIN
+Time: 0.099 ms
+INSERT 0 32459
+Time: 1187.112 ms (00:01.187)
+INSERT 0 537183
+Time: 11826.189 ms (00:11.826)
+ skus_reversionados | lineas_en_versiones_cerradas 
+--------------------+------------------------------
+              32459 |                       119235
+(1 row)
+
+Time: 134.051 ms
+ROLLBACK
+Time: 0.157 ms
+BEGIN
+Time: 0.106 ms
+UPDATE 1
+Time: 1.271 ms
+INSERT 0 1
+Time: 0.542 ms
+ROLLBACK
+Time: 0.116 ms
+BEGIN
+Time: 0.112 ms
+INSERT 0 17
+Time: 1.007 ms
+ROLLBACK
+Time: 0.142 ms
+        tabla        |  filas  | tamano_total | bytes_por_fila 
+---------------------+---------+--------------+----------------
+ producto_atributo   | 7944263 | 901 MB       |            118
+ resena              | 2099473 | 668 MB       |            333
+ pedido_estado_hist  | 2825031 | 435 MB       |            161
+ pedido_linea        | 1773080 | 265 MB       |            156
+ pedido              |  600000 | 249 MB       |            434
+ dim_producto        |  576000 | 122 MB       |            222
+ lista_deseos        |  599994 | 68 MB        |            119
+ cliente             |  200000 | 58 MB        |            301
+ stock               |  480000 | 38 MB        |             83
+ cliente_preferencia |  200000 | 14 MB        |             74
+ dim_vendedor        |    3200 | 344 kB       |            110
+ dim_categoria       |      40 | 64 kB        |           1638
+ dim_atributo        |      60 | 64 kB        |           1092
+ dim_departamento    |       6 | 64 kB        |          10922
+(14 rows)
+
+Time: 10.516 ms
+      relacion       | media  |  p95  | maximo 
+---------------------+--------+-------+--------
+ deseos_por_cliente  |   3.16 |   6.0 |     14
+ skus_por_vendedor   | 150.00 | 370.1 |  32459
+ pedidos_por_cliente |   3.54 |   9.0 |   4452
+ versiones_por_sku   |   1.20 |   2.0 |      2
+ lineas_por_pedido   |   2.96 |   4.0 |     40
+ atributos_por_sku   |  16.55 |  17.0 |     17
+ estados_por_pedido  |   4.71 |   5.0 |      5
+ resenas_por_sku     |   4.61 |  11.0 |  43020
+(8 rows)
+
+Time: 2036.021 ms (00:02.036)

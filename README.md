@@ -17,20 +17,23 @@ PostgreSQL 17 · MongoDB 8 (replica set) · Docker Compose · Python 3.12 (psyco
 
 ## Resultados
 
-_Se completará al terminar la parte D._
+Tiempo medio por operación (ms), medido con el banco de pruebas. Se completará al terminar la parte D.
 
-| Operación | Veces/día | PG original (ms) | PG mejorado (ms) | MongoDB (ms) |
-|---|---|---|---|---|
-| L1 Ficha de producto | 2.900.000 | | | |
-| L2 Listado con facetas | 780.000 | | | |
-| L3 Panel del vendedor | 12.000 | | | |
-| L4 Mis pedidos | 350.000 | | | |
-| L5 Seguimiento de pedido | 900.000 | | | |
-| L6 Informe de ventas | 50 | | | |
-| E1 Crear pedido | 6.250 | | | |
-| E2 Publicar catálogo | 40 | | | |
-| E3 Avanzar estado | 25.000 | | | |
-| E4 Editar ficha técnica | 3.000 | | | |
+| Operación | Veces/día | PG original | PG mejorado | MongoDB |
+|---|---:|---:|---:|---:|
+| L1 Ficha de producto | 2.900.000 | 1.110 | | |
+| L2 Listado con facetas | 780.000 | 808 | | |
+| L3 Panel del vendedor | 12.000 | 117 | | |
+| L4 Mis pedidos | 350.000 | 3,5 | | |
+| L5 Seguimiento de pedido | 900.000 | 1,5 | | |
+| L6 Informe de ventas | 50 | 5.480 | | |
+| E1 Crear pedido | 6.250 | 8,9 | | |
+| E2 Publicar catálogo | 40 | 88 | | |
+| E3 Avanzar estado | 25.000 | 1,8 | | |
+| E4 Editar ficha técnica | 3.000 | 1,3 | | |
+| **Horas de servidor al día** | | **≈ 1.070** | | |
+
+Punto de partida: el 99,9 % del coste diario está en L1 y L2. Análisis completo en [docs/0_punto_de_partida.md](docs/0_punto_de_partida.md).
 
 ## Decisiones de diseño
 
