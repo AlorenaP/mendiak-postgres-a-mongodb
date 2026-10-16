@@ -100,6 +100,42 @@ def pg_L1(cur, p):
     return r
 
 
+def pg_L2(cur, p):
+    """Buscador con filtros y facetas.
+
+    Cambio respecto del original (ver 05_pg_mejorado.sql, bloque L2):
+    los productos se buscan en producto_busqueda, con un índice
+    compuesto que resuelve los cuatro filtros a la vez, en lugar de
+    tres JOIN contra el EAV. Las facetas salen del jsonb de atributos
+    de las filas ya encontradas, sin volver al EAV.
+    """
+    cur.execute("""
+    WITH filtrados AS MATERIALIZED (
+        SELECT sku, nombre, marca, precio_base, atributos
+          FROM producto_busqueda
+         WHERE departamento_id = %(departamento_id)s
+           AND color  = %(color)s
+           AND genero = %(genero)s
+           AND peso BETWEEN %(peso_min)s AND %(peso_max)s
+    )
+    SELECT (SELECT count(*) FROM filtrados)                  AS total,
+           (SELECT jsonb_agg(to_jsonb(t))
+              FROM (SELECT sku, nombre, marca, precio_base
+                      FROM filtrados
+                     ORDER BY precio_base, sku
+                     LIMIT 24) t)                            AS pagina,
+           (SELECT jsonb_agg(to_jsonb(f))
+              FROM (SELECT e.key AS atributo, e.value AS valor, count(*) AS n
+                      FROM filtrados fl, jsonb_each_text(fl.atributos) e
+                     GROUP BY 1, 2
+                     ORDER BY 1, 3 DESC, 2) f)               AS facetas
+    """, p)
+    r = cur.fetchone()
+    r["pagina"] = r["pagina"] or []
+    r["facetas"] = r["facetas"] or []
+    return r
+
+
 def pg_L3(cur, p):
     """Panel del vendedor.
 
@@ -254,7 +290,7 @@ def pg_E1(cur, p):
 
 PG_MEJORADO = {
     "L1": pg_L1,
-    "L2": orig.L2,
+    "L2": pg_L2,
     "L3": pg_L3,
     "L4": orig.L4,
     "L5": orig.L5,

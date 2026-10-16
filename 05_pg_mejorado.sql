@@ -152,3 +152,147 @@ DROP INDEX IF EXISTS ix_pedido_cliente;
 CREATE INDEX ix_pedido_cliente ON pedido (cliente_id, ts_creacion DESC)
     INCLUDE (estado_actual, importe_total);
 VACUUM ANALYZE pedido;   -- mapa de visibilidad al día para el Index Only Scan
+
+
+-- =====================================================================
+--  L2 · BUSCADOR CON FILTROS Y FACETAS  (175 h/día en el original)
+--
+--  Problema: con el EAV, cada filtro es un JOIN más contra 7,9 M de filas
+--  y solo el primero usa bien un índice. Para devolver 1.233 productos
+--  se examinan unos 80.000 (65 por cada uno que se devuelve), y luego
+--  hay que volver al EAV para las facetas.
+--
+--  Solución: tabla de búsqueda producto_busqueda, 1 fila por producto
+--  vendible (vigente y activo), con:
+--    * departamento_id copiado (ahorra el JOIN con dim_categoria);
+--    * los atributos UNIVERSALES por los que filtra el buscador (color,
+--      género y peso) como columnas normales, con un índice compuesto
+--      que resuelve los tres filtros a la vez;
+--    * la ficha técnica entera en un jsonb para calcular las facetas
+--      sin volver al EAV.
+--  El EAV se mantiene como fuente de verdad: producto_busqueda es una
+--  copia derivada.
+--
+--  Tolerancia: NINGUNA. El listado muestra el precio, que tiene que
+--  coincidir con la ficha en cuanto el vendedor publica (E2). Por eso
+--  no es una vista materializada con refresco periódico, sino una copia
+--  que mantienen triggers por SENTENCIA en la misma transacción que la
+--  escritura. Coste: E2 y E4 hacen más trabajo (ver docs).
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- L2.1 · Cómo se calcula una fila (una sola definición para la carga
+-- inicial y para los triggers)
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS producto_busqueda CASCADE;
+DROP VIEW  IF EXISTS v_producto_busqueda CASCADE;
+
+CREATE VIEW v_producto_busqueda AS
+SELECT p.sku,
+       c.departamento_id,
+       p.nombre,
+       p.marca,
+       p.precio_base,
+       a.color,
+       a.genero,
+       a.peso,
+       a.atributos
+FROM dim_producto p
+JOIN dim_categoria c ON c.categoria_id = p.categoria_id
+-- LATERAL: los atributos se buscan producto a producto por la clave
+-- primaria del EAV. Con un GROUP BY de todo el EAV, el filtro por SKU
+-- de los triggers no llegaba hasta producto_atributo y cada recálculo
+-- recorría los 7,9 M de filas.
+CROSS JOIN LATERAL (
+      SELECT max(pa.valor_texto) FILTER (WHERE pa.atributo_id = 3)  AS color,
+             max(pa.valor_texto) FILTER (WHERE pa.atributo_id = 21) AS genero,
+             max(pa.valor_num)   FILTER (WHERE pa.atributo_id = 1)  AS peso,
+             coalesce(jsonb_object_agg(da.nombre,
+                  coalesce(pa.valor_texto, pa.valor_num::text, pa.valor_bool::text)),
+                  '{}'::jsonb) AS atributos
+        FROM producto_atributo pa
+        JOIN dim_atributo da ON da.atributo_id = pa.atributo_id
+       WHERE pa.sku = p.sku) a
+WHERE p.es_actual AND p.activo;
+
+-- ---------------------------------------------------------------------
+-- L2.2 · La tabla y su índice
+-- ---------------------------------------------------------------------
+CREATE TABLE producto_busqueda (
+    sku             TEXT PRIMARY KEY,
+    departamento_id SMALLINT      NOT NULL,
+    nombre          TEXT          NOT NULL,
+    marca           TEXT          NOT NULL,
+    precio_base     NUMERIC(10,2) NOT NULL,
+    color           TEXT,
+    genero          TEXT,
+    peso            NUMERIC(12,3),
+    atributos       JSONB         NOT NULL
+);
+
+INSERT INTO producto_busqueda
+SELECT * FROM v_producto_busqueda;
+
+-- Los tres filtros de igualdad primero y el rango (peso) al final:
+-- el índice entrega exactamente las filas que cumplen los cuatro.
+CREATE INDEX ix_busqueda_filtros
+    ON producto_busqueda (departamento_id, color, genero, peso);
+
+-- Ordena físicamente la tabla según el índice: las filas de una misma
+-- búsqueda quedan juntas en el disco (pocas páginas que leer). Las
+-- altas posteriores no mantienen este orden; se repetiría de vez en
+-- cuando en mantenimiento.
+CLUSTER producto_busqueda USING ix_busqueda_filtros;
+ANALYZE producto_busqueda;
+
+-- ---------------------------------------------------------------------
+-- L2.3 · Mantenimiento: triggers por sentencia
+--
+-- Cada vez que una sentencia toca dim_producto o producto_atributo, se
+-- recalculan las filas de los SKU afectados. Por sentencia y no por
+-- fila: E2 con el vendedor 1 toca 1,1 M de filas en dos sentencias, y
+-- así se recalcula cada SKU una vez por sentencia, no una vez por fila.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION refrescar_busqueda(p_skus TEXT[]) RETURNS void
+LANGUAGE sql AS $$
+    DELETE FROM producto_busqueda WHERE sku = ANY(p_skus);
+    INSERT INTO producto_busqueda
+    SELECT * FROM v_producto_busqueda WHERE sku = ANY(p_skus);
+$$;
+
+CREATE OR REPLACE FUNCTION trg_busqueda() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        PERFORM refrescar_busqueda(ARRAY(SELECT DISTINCT sku FROM nuevas));
+    ELSIF TG_OP = 'UPDATE' THEN
+        PERFORM refrescar_busqueda(ARRAY(SELECT sku FROM nuevas
+                                         UNION SELECT sku FROM viejas));
+    ELSE
+        PERFORM refrescar_busqueda(ARRAY(SELECT DISTINCT sku FROM viejas));
+    END IF;
+    RETURN NULL;
+END $$;
+
+-- PostgreSQL no permite tablas de transición en un trigger con varios
+-- eventos: un trigger por evento y tabla.
+DROP TRIGGER IF EXISTS busqueda_producto_ins ON dim_producto;
+DROP TRIGGER IF EXISTS busqueda_producto_upd ON dim_producto;
+DROP TRIGGER IF EXISTS busqueda_producto_del ON dim_producto;
+DROP TRIGGER IF EXISTS busqueda_atributo_ins ON producto_atributo;
+DROP TRIGGER IF EXISTS busqueda_atributo_upd ON producto_atributo;
+DROP TRIGGER IF EXISTS busqueda_atributo_del ON producto_atributo;
+
+CREATE TRIGGER busqueda_producto_ins AFTER INSERT ON dim_producto
+    REFERENCING NEW TABLE AS nuevas FOR EACH STATEMENT EXECUTE FUNCTION trg_busqueda();
+CREATE TRIGGER busqueda_producto_upd AFTER UPDATE ON dim_producto
+    REFERENCING OLD TABLE AS viejas NEW TABLE AS nuevas FOR EACH STATEMENT EXECUTE FUNCTION trg_busqueda();
+CREATE TRIGGER busqueda_producto_del AFTER DELETE ON dim_producto
+    REFERENCING OLD TABLE AS viejas FOR EACH STATEMENT EXECUTE FUNCTION trg_busqueda();
+
+CREATE TRIGGER busqueda_atributo_ins AFTER INSERT ON producto_atributo
+    REFERENCING NEW TABLE AS nuevas FOR EACH STATEMENT EXECUTE FUNCTION trg_busqueda();
+CREATE TRIGGER busqueda_atributo_upd AFTER UPDATE ON producto_atributo
+    REFERENCING OLD TABLE AS viejas NEW TABLE AS nuevas FOR EACH STATEMENT EXECUTE FUNCTION trg_busqueda();
+CREATE TRIGGER busqueda_atributo_del AFTER DELETE ON producto_atributo
+    REFERENCING OLD TABLE AS viejas FOR EACH STATEMENT EXECUTE FUNCTION trg_busqueda();

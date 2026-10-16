@@ -158,14 +158,99 @@ En los planes, el índice `ix_producto_vendedor` devuelve **103.923** entradas p
 
 ---
 
-## Resumen hasta ahora
+## L2 · Buscador con filtros y facetas
 
-| Op | Veces/día | Original (ms) | Mejorado (ms) | Horas/día original | Horas/día mejorado |
-|---|---:|---:|---:|---:|---:|
-| L1 | 2.900.000 | 1.110 | **0,95** | 894 | **0,76** |
-| L3 | 12.000 | 237 | **162** | 0,79 | 0,54 |
-| E1 | 6.250 | 8,9 | **3,8** | 0,015 | 0,007 |
+**Problema** ([Parte 0](0_punto_de_partida.md)): con el EAV, cada filtro es un `JOIN` más contra 7,9 M de filas y solo el primero aprovecha bien un índice. Para devolver 1.233 productos se examinaban unos 80.000, y luego había que volver al EAV para las facetas.
 
-Con L1 resuelta, el coste diario del sistema baja de **≈ 1.070 h a ≈ 177 h**, y ahora **L2 es el 99 % de lo que queda**.
+**Cambio: una tabla de búsqueda** (`producto_busqueda`), con una fila por producto vendible (vigente y activo), es decir, *copiar los datos en la tabla donde se consultan*:
 
-> Los valores "original" de L3 son los de la medición A/B, no los de la Parte 0, para comparar en igualdad de condiciones.
+| Qué guarda | Para qué |
+|---|---|
+| `departamento_id` copiado de la categoría | Evita el `JOIN` con `dim_categoria` |
+| **Color, género y peso como columnas** | Son atributos **universales** (los tiene todo producto) y son los que usa el buscador. Un índice compuesto `(departamento_id, color, genero, peso)` resuelve los cuatro filtros a la vez y entrega exactamente las filas que los cumplen |
+| La ficha técnica completa en un `jsonb` | Las facetas se calculan con `jsonb_each_text` sobre las filas ya encontradas, sin volver al EAV |
+
+Además, la tabla se ordena físicamente según el índice (`CLUSTER`), así que las filas de una misma búsqueda quedan juntas en el disco. Las altas posteriores no mantienen ese orden; se repetiría en el mantenimiento periódico.
+
+El **EAV sigue siendo la fuente de verdad**: `producto_busqueda` es una copia derivada, definida en una sola vista (`v_producto_busqueda`) que sirve tanto para la carga inicial como para mantenerla.
+
+### ¿Cómo se mantiene al día? Tolerancia cero
+
+El listado muestra el **precio**, y tiene que coincidir con la ficha de producto en cuanto el vendedor publica (E2). Por eso **no** se usa una vista materializada con refresco periódico (como el carrusel de L1), sino **triggers por sentencia** sobre `dim_producto` y `producto_atributo`: cuando una sentencia toca productos o atributos, se recalculan las filas de esos SKU **en la misma transacción**.
+
+- **Por sentencia y no por fila:** E2 con el vendedor 1 toca 1,1 M de filas en dos sentencias. Con triggers por fila se recalcularía cada SKU unas 17 veces; por sentencia, una vez por sentencia, usando las tablas de transición (`REFERENCING NEW TABLE / OLD TABLE`).
+- **Verificado** en una copia de pruebas: después de E2 (vendedores 1 y 1500) y de E4, la tabla coincide exactamente con un recálculo completo (0 diferencias), y el precio nuevo aparece en el buscador en la misma transacción que la publicación.
+
+**Un fallo encontrado al probar.** La primera versión de la vista agrupaba todo el EAV con `GROUP BY sku`. Con esa forma, el filtro por SKU de los triggers no llegaba hasta `producto_atributo` y **cada recálculo de un solo producto recorría los 7,9 M de filas**. Se cambió por un `LATERAL`, que busca los atributos producto a producto por la clave primaria del EAV. Lo delató el plan de ejecución, no el tiempo: en la copia de pruebas, pequeña, solo eran 12 ms.
+
+### Resultado
+
+`banco comprobar`: 10/10 OK (L2, E2 y E4, estas dos con los triggers activos).
+
+| L2 · medición A/B, 30 repeticiones | Original | Mejorado | Factor |
+|---|---:|---:|---:|
+| p50 | 538,6 ms | **30,4 ms** | |
+| Media | 522,3 ms | **27,9 ms** | ×19 |
+| p95 | 882,3 ms | **41,5 ms** | |
+| KB leídos | 453.182 | **104** | ×4.360 |
+| **Horas de servidor al día** | **113,2** | **6,05** | |
+
+> La media del original es más baja que en la Parte 0 (808 ms) porque esta medición se hizo después de `VACUUM ANALYZE`. Por eso se compara en A/B, en la misma ejecución.
+
+### El precio: las escrituras hacen más trabajo
+
+| Escritura | Parte 0 (sin triggers) | Con triggers |
+|---|---:|---:|
+| E2 (vendedores 1500, 600, 150) | 87,6 ms · 3.165 KB | 81,7 ms · 6.997 KB |
+| E4 | 1,32 ms · 43 KB | 1,46 ms · 78 KB |
+
+Con vendedores de tamaño normal el tiempo apenas cambia, aunque se lee más (los KB se duplican). En la copia de pruebas, E2 con el **vendedor 1** pasa de 536 a 759 ms (+40 %). Es el mismo dilema que aparecerá en MongoDB al incrustar la ficha técnica en el producto: **leer barato a cambio de escribir más caro**. Aquí compensa con mucho: L2 se lanza 780.000 veces al día; E2, 40 veces, y E4, 3.000.
+
+### Por qué solo color, género y peso como columnas
+
+Son los tres atributos por los que filtra el buscador y están entre los cinco universales. Los demás atributos dependen de la categoría (una tienda de campaña no tiene talla), así que siguen en el EAV y en el `jsonb`. Si mañana se quisiera filtrar por cualquier atributo, la alternativa en PostgreSQL sería un índice GIN sobre el `jsonb`. Es la misma idea que el **patrón *attribute*** que se usará en MongoDB (parte B.5).
+
+---
+
+## Operaciones que se dejan como estaban
+
+El enunciado pide no tocar lo que no hace falta mejorar y justificarlo con el `EXPLAIN`:
+
+| Op | Coste/día | Plan (Parte 0) | Decisión |
+|---|---:|---|---|
+| **L4** Mis pedidos | 0,34 h | Todo por índice; 2,7 ms y 214 bloques para 10 pedidos completos | **No se toca.** Lo que cuesta no es el plan, sino que las filas de un pedido (líneas e historial) están **repartidas por el disco**; por eso es la operación más sensible a la falta de memoria (×2,7). En PostgreSQL solo se arreglaría reordenando las tablas (`CLUSTER`), y el orden se pierde con cada inserción. **Es justo lo que resuelve el modelo documental**: el pedido completo en un solo sitio |
+| **L5** Seguimiento de pedido | 0,38 h | Igual que L4 para un pedido: 2,2 ms y 18 bloques | Igual que L4 |
+| **L6** Informe de ventas | 0,08 h | Lectura secuencial de tres tablas, 4,6 s | **No se toca.** Se lanza 50 veces al día. Precalcularla (una vista materializada por departamento y mes) ahorraría segundos al día y quitaría flexibilidad: mañana pedirán otro corte |
+| **E2** Publicar catálogo | 0,001 h | Una sentencia por paso | Se deja. Su problema (no es idempotente: ver [R.1, ejercicio 6](R1_transacciones.md#ejercicio-6--publicar-un-catálogo-es-todo-o-nada)) es de diseño de la aplicación, no de rendimiento |
+| **E3** Avanzar estado | 0,01 h | 1,3 ms | No hay nada que mejorar |
+| **E4** Editar ficha | 0,001 h | 1 ms | No hay nada que mejorar |
+
+---
+
+## R.3 · Lo que ya hacía bien PostgreSQL
+
+Antes de pasar a MongoDB conviene anotar lo que el modelo relacional daba **sin programar nada**, porque en un modelo documental habrá que hacerlo a mano o se perderá:
+
+1. **Integridad referencial.** Las claves ajenas impiden reseñas de productos inexistentes, líneas que apuntan a versiones que no existen o pedidos de clientes borrados. En MongoDB no hay claves ajenas: habrá que comprobarlo con consultas (parte C.2).
+2. **Reglas de dominio.** Los `CHECK` (stock nunca negativo, estados y canales válidos, una versión que no termina antes de empezar) se cumplieron en todos los ejercicios de la R.1. En MongoDB, el equivalente es el validador `$jsonSchema` (parte C.1).
+3. **El historial de precios (SCD2).** Cada línea apunta a la versión del producto que se vendió: 198.542 líneas conservan el precio antiguo. El modelo documental tendrá que guardar ese dato en la línea o mantener las versiones.
+4. **Transacciones de cualquier tamaño.** E2 con el vendedor 1 toca 1,1 M de filas en una sola transacción, todo o nada, y los clientes nunca ven el catálogo a medias (MVCC, [R.1, ejercicio 6](R1_transacciones.md#ejercicio-6--publicar-un-catálogo-es-todo-o-nada)). En MongoDB, una transacción tan grande no es viable (parte D.2).
+5. **Consultas que nadie preparó.** L6 cruza cinco tablas, agrupa por departamento y mes y saca subtotales con `ROLLUP` sin ninguna estructura hecha para ello. Mañana podrá ser por marca o por provincia sin cambiar el modelo.
+6. **Bloqueos y concurrencia.** Bloqueo de fila, detección de interbloqueos y niveles de aislamiento ([R.1, ejercicios 4 y 5](R1_transacciones.md#ejercicio-4--dos-clientes-compran-la-última-unidad)).
+
+Y la conclusión más importante de la R.2: **el 99 % del coste original no venía del motor relacional, sino de recalcular en cada lectura datos que cambian poco** (L1) y **de un modelo de atributos poco apto para filtrar** (L2). Ambas cosas se han resuelto sin salir de PostgreSQL.
+
+---
+
+## Resumen de la R.2
+
+| Op | Veces/día | Original (ms) | Mejorado (ms) | Horas/día original | Horas/día mejorado | Técnica |
+|---|---:|---:|---:|---:|---:|---|
+| **L1** | 2.900.000 | 1.110 | **0,95** | 894 | **0,76** | Contador + vista materializada |
+| **L2** | 780.000 | 522 | **27,9** | 113 | **6,05** | Tabla de búsqueda + índice compuesto |
+| **L3** | 12.000 | 237 | **162** | 0,79 | 0,54 | Contador de L1 |
+| **E1** | 6.250 | 8,9 | **3,8** | 0,015 | 0,007 | Corrección + índice cubriente |
+| L4, L5, L6, E2, E3, E4 | | | | ≈ 0,8 | ≈ 0,8 | Sin cambios |
+| **Total** | | | | **≈ 1.070** (Parte 0) | **≈ 8** | **≈ 130 veces menos** |
+
+> Los valores "original" de L2 y L3 son los de las mediciones A/B. La tabla definitiva, con todas las operaciones medidas en una misma ejecución, está en el [README](../README.md).
