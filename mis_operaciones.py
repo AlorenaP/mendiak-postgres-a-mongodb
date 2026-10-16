@@ -525,14 +525,17 @@ def mongo_E1(db, p, s):
     return {"importe_total": total, "segmento": segmento}
 
 
-def mongo_E2(db, p, s, tamano_lote=None):
+def mongo_E2(db, p, s):
     """Nueva versión de cada producto del vendedor: cierra la versión vigente,
     crea la nueva (productos_versiones) y actualiza el producto (precio +6 %,
     garantía +12 meses). Idempotente: no vuelve a versionar lo publicado hoy."""
     hoy = dt.datetime.combine(dt.date.today(), dt.time(), tzinfo=UTC)
     ayer = hoy - dt.timedelta(days=1)
+    filtro = {"vendedor.id": p["vendedor_id"]}
+    if p.get("skus"):                      # publicación por lotes (parte D.2)
+        filtro["_id"] = {"$in": p["skus"]}
     pendientes = [d for d in db.productos.find(
-        {"vendedor.id": p["vendedor_id"]},
+        filtro,
         {"version_sk": 1, "nombre": 1, "marca": 1, "precio": 1, "categoria.id": 1,
          "valido_desde": 1}, session=s)
         if d["valido_desde"].replace(tzinfo=UTC) < hoy]
@@ -557,10 +560,8 @@ def mongo_E2(db, p, s, tamano_lote=None):
                                  {"$set": {"precio": precio, "version_sk": sk, "valido_desde": hoy},
                                   "$inc": {"atributos.$[g].v": 12}},
                                  array_filters=[{"g.k": "garantia_meses"}]))
-    lote = tamano_lote or len(cambios)
-    for i in range(0, len(cambios), lote):
-        db.productos_versiones.bulk_write(versiones[2 * i:2 * (i + lote)], ordered=False, session=s)
-        db.productos.bulk_write(cambios[i:i + lote], ordered=False, session=s)
+    db.productos_versiones.bulk_write(versiones, ordered=False, session=s)
+    db.productos.bulk_write(cambios, ordered=False, session=s)
     return {"skus_reversionados": len(pendientes)}
 
 

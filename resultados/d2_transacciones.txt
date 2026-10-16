@@ -1,0 +1,15 @@
+﻿
+1. Dos clientes compran la última unidad de MEND-000777
+   stock inicial: 1
+   T1 resta 1 (comprobar y restar en una operación): modificados = 1
+   T2 resta 1 -> ERROR inmediato: OperationFailure ['TransientTransactionError']
+      Caused by :: Write conflict during plan execution and yielding is disabled. :: Please retry your operation or multi-docu
+   (las dos transacciones se deshacen) stock final: 1
+
+2. E2 con el vendedor 1 en UNA sola transacción
+   productos del vendedor 1: 32459 -> documentos a escribir: 97377
+   FALLA tras 27.2 s: BulkWriteError
+      batch op errors occurred, full error: {'writeErrors': [{'index': 15600, 'code': 365, 'errmsg': 'operation was interrupted', 'op': {'q': {'_id': 'MEND-289164'}, 'u': {'$set': {'precio': Decimal128('387.50'), 'version_sk': 591601, 'valido_desde': datetime.datetime(2026, 10, 16, 0, 0, tzinfo=datetime.t
+
+3. E2 con el vendedor 1 por lotes (una transacción por lote)
+   33 lotes de 1000 productos, 0 fallidos: 3.4 s en total, el más lento 0.28 s
