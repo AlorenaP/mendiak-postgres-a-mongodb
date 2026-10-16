@@ -251,6 +251,6 @@ Y la conclusión más importante de la R.2: **el 99 % del coste original no ven�
 | **L3** | 12.000 | 237 | **162** | 0,79 | 0,54 | Contador de L1 |
 | **E1** | 6.250 | 8,9 | **3,8** | 0,015 | 0,007 | Corrección + índice cubriente |
 | L4, L5, L6, E2, E3, E4 | | | | ≈ 0,8 | ≈ 0,8 | Sin cambios |
-| **Total** | | | | **≈ 1.070** (Parte 0) | **≈ 8** | **≈ 130 veces menos** |
+| **Total** | | | | **≈ 1.070** (Parte 0) | **≈ 6,9** | **≈ 155 veces menos** |
 
-> Los valores "original" de L2 y L3 son los de las mediciones A/B. La tabla definitiva, con todas las operaciones medidas en una misma ejecución, está en el [README](../README.md).
+> Los valores "original" de L2 y L3 son los de las mediciones A/B. El total mejorado (≈ 6,9 h) sale de la medición de las diez operaciones en una misma ejecución (`r2-final`), que está en el [README](../README.md).

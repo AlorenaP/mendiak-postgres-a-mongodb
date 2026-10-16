@@ -28,3 +28,13 @@ fecha,etiqueta,modo,op,motor,n,p50_ms,p95_ms,media_ms,kb_leidos_op,horas_dia
 2026-10-16T07:43:55,r2-L2-ab,medir,L2,pg_mejorado,30,30.436,41.537,27.931,103.7,6.052
 2026-10-16T07:47:03,r2-L2-escrituras,medir,E2,pg_mejorado,3,63.879,145.462,81.721,6997.3,0.001
 2026-10-16T07:47:03,r2-L2-escrituras,medir,E4,pg_mejorado,50,1.368,1.823,1.456,77.9,0.001
+2026-10-16T07:56:24,r2-final,medir,L1,pg_mejorado,30,1.138,2.195,1.179,81.1,0.95
+2026-10-16T07:56:24,r2-final,medir,L2,pg_mejorado,20,26.619,34.097,24.739,0.0,5.36
+2026-10-16T07:56:24,r2-final,medir,L3,pg_mejorado,10,24.204,99.118,37.768,148.0,0.126
+2026-10-16T07:56:24,r2-final,medir,L4,pg_mejorado,30,1.647,3.668,1.853,201.6,0.18
+2026-10-16T07:56:24,r2-final,medir,L5,pg_mejorado,50,0.731,1.165,0.76,70.6,0.19
+2026-10-16T07:56:24,r2-final,medir,L6,pg_mejorado,3,3222.171,3287.707,3241.026,72080.0,0.045
+2026-10-16T07:56:24,r2-final,medir,E1,pg_mejorado,30,3.64,5.519,3.771,96.0,0.007
+2026-10-16T07:56:24,r2-final,medir,E2,pg_mejorado,3,61.502,142.777,79.748,3896.0,0.001
+2026-10-16T07:56:24,r2-final,medir,E3,pg_mejorado,50,0.663,1.265,0.721,13.9,0.005
+2026-10-16T07:56:24,r2-final,medir,E4,pg_mejorado,50,1.811,3.096,1.964,105.1,0.002
