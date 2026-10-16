@@ -304,45 +304,288 @@ PG_MEJORADO = {
 
 # =====================================================================
 # MongoDB (parte D)
+# Modelo: docs/B_modelo.md. Importes en Decimal128; los cálculos con
+# dinero se hacen con Decimal y redondeo "half up", como round() de
+# PostgreSQL.
 # =====================================================================
+import datetime as dt
+from decimal import Decimal, ROUND_HALF_UP
+
+from bson import Decimal128, Int64
+from pymongo import InsertOne, ReturnDocument, UpdateOne
+
+UTC = dt.timezone.utc
+SIGUIENTE = {"creado": "pagado", "pagado": "preparacion",
+             "preparacion": "enviado", "enviado": "entregado"}
+
+
+def _dec(x):
+    return x.to_decimal() if isinstance(x, Decimal128) else Decimal(str(x))
+
+
+def _r2(x):
+    return x.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _segmento(n, gasto):
+    if gasto > 3000:
+        return "premium"
+    if n > 3:
+        return "recurrente"
+    return "nuevo"
+
+
 def mongo_L1(db, p):
-    raise NotImplementedError
+    """1 documento de productos + 1 de top_categoria."""
+    d = db.productos.find_one({"_id": p["sku"]})
+    rr = d["resenas_resumen"]
+    top = db.top_categoria.find_one({"_id": d["categoria"]["id"]}) or {"top": []}
+    return {
+        "sku": d["_id"], "nombre": d["nombre"], "marca": d["marca"],
+        "precio": _dec(d["precio"]), "peso_g": d.get("peso_g"), "activo": d["activo"],
+        "categoria": d["categoria"]["nombre"], "departamento": d["departamento"]["nombre"],
+        "vendedor_id": d["vendedor"]["id"], "vendedor": d["vendedor"]["nombre"],
+        "valoracion": d["vendedor"].get("valoracion"), "provincia": d["vendedor"].get("provincia"),
+        "ficha_tecnica": {a["k"]: a["v"] for a in d["atributos"]},
+        "n_resenas": rr["n"],
+        "nota_media": _r2(Decimal(rr["suma"]) / Decimal(rr["n"])) if rr["n"] else None,
+        "histograma": rr["hist"] if rr["n"] else None,
+        "resenas_recientes": d["resenas_recientes"],
+        "relacionados": [x for x in top["top"] if x["sku"] != d["_id"]][:6],
+    }
 
 
 def mongo_L2(db, p):
-    raise NotImplementedError
+    """Una agregación: filtro por el índice de atributos y $facet con total, página y facetas."""
+    filtro = {"departamento.id": p["departamento_id"], "activo": True,
+              "atributos": {"$all": [
+                  {"$elemMatch": {"k": "color", "v": p["color"]}},
+                  {"$elemMatch": {"k": "genero", "v": p["genero"]}},
+                  {"$elemMatch": {"k": "peso", "v": {"$gte": p["peso_min"],
+                                                     "$lte": p["peso_max"]}}}]}}
+    r = next(db.productos.aggregate([
+        {"$match": filtro},
+        {"$facet": {
+            "total": [{"$count": "n"}],
+            "pagina": [{"$sort": {"precio": 1, "_id": 1}}, {"$limit": 24},
+                       {"$project": {"_id": 0, "sku": "$_id", "nombre": 1, "marca": 1,
+                                     "precio_base": "$precio"}}],
+            "facetas": [{"$unwind": "$atributos"},
+                        {"$group": {"_id": {"a": "$atributos.k", "v": "$atributos.v"},
+                                    "n": {"$sum": 1}}},
+                        {"$project": {"_id": 0, "atributo": "$_id.a", "valor": "$_id.v", "n": 1}},
+                        {"$sort": {"atributo": 1, "n": -1, "valor": 1}}]}}]))
+    return {"total": r["total"][0]["n"] if r["total"] else 0,
+            "pagina": r["pagina"], "facetas": r["facetas"]}
 
 
 def mongo_L3(db, p):
-    raise NotImplementedError
+    """Ventas: pedidos del vendedor (índice lineas.vendedor_id + fecha).
+    Catálogo: resumen de reseñas de sus productos (índice vendedor.id)."""
+    v = p["vendedor_id"]
+    desde = dt.datetime(2025, 9, 1, 22, 0, tzinfo=UTC)          # 2025-09-02 00:00 Madrid
+    r = next(db.pedidos.aggregate([
+        {"$match": {"lineas.vendedor_id": v, "ts_creacion": {"$gte": desde},
+                    "estado_actual": {"$ne": "cancelado"}}},
+        {"$unwind": "$lineas"},
+        {"$match": {"lineas.vendedor_id": v}},
+        {"$facet": {
+            "total": [{"$group": {"_id": "$_id", "imp": {"$sum": "$lineas.importe_neto"}}},
+                      {"$group": {"_id": None, "pedidos": {"$sum": 1},
+                                  "facturado": {"$sum": "$imp"}}}],
+            "top": [{"$group": {"_id": {"sku": "$lineas.sku", "nombre": "$lineas.nombre"},
+                                "unidades": {"$sum": "$lineas.cantidad"},
+                                "importe": {"$sum": "$lineas.importe_neto"}}},
+                    {"$sort": {"importe": -1, "_id.sku": 1}}, {"$limit": 10},
+                    {"$project": {"_id": 0, "sku": "$_id.sku", "nombre": "$_id.nombre",
+                                  "unidades": 1, "importe": 1}}],
+            "ultimos": [{"$group": {"_id": "$_id", "ts_creacion": {"$first": "$ts_creacion"},
+                                    "estado_actual": {"$first": "$estado_actual"},
+                                    "canal": {"$first": "$canal"},
+                                    "cliente_id": {"$first": "$cliente_id"},
+                                    "lineas": {"$sum": 1},
+                                    "importe": {"$sum": "$lineas.importe_neto"}}},
+                        {"$sort": {"ts_creacion": -1, "_id": -1}}, {"$limit": 50}]}}],
+        allowDiskUse=True))
+    tot = r["total"][0] if r["total"] else {"pedidos": 0, "facturado": Decimal128("0")}
+    clientes = {c["_id"]: c for c in db.clientes.find(
+        {"_id": {"$in": [u["cliente_id"] for u in r["ultimos"]]}}, {"nombre": 1, "email": 1})}
+    ultimos = [{"pedido_id": u["_id"], "ts_creacion": u["ts_creacion"],
+                "estado_actual": u["estado_actual"], "canal": u["canal"],
+                "cliente": clientes[u["cliente_id"]]["nombre"],
+                "email": clientes[u["cliente_id"]]["email"],
+                "lineas": u["lineas"], "importe": _r2(_dec(u["importe"]))} for u in r["ultimos"]]
+    skus = n_total = 0
+    notas = []
+    for d in db.productos.find({"vendedor.id": v}, {"resenas_resumen.n": 1, "resenas_resumen.suma": 1}):
+        skus += 1
+        n = d["resenas_resumen"]["n"]
+        n_total += n
+        if n:
+            notas.append(Decimal(d["resenas_resumen"]["suma"]) / Decimal(n))
+    return {"pedidos": tot["pedidos"], "facturado": _r2(_dec(tot["facturado"])),
+            "top_skus": r["top"], "ultimos_pedidos": ultimos,
+            "salud_catalogo": {"skus_vivos": skus, "resenas_totales": n_total,
+                               "nota_media_catalogo": _r2(sum(notas) / len(notas)) if notas else None}}
+
+
+_CAMPOS_PEDIDO = {"cliente_id": 1, "ts_creacion": 1, "estado_actual": 1, "canal": 1,
+                  "metodo_pago": 1, "importe_total": 1, "envio": 1, "lineas": 1, "historial": 1}
+
+
+def _pedido(d):
+    d["pedido_id"] = d.pop("_id")
+    return d
 
 
 def mongo_L4(db, p):
-    raise NotImplementedError
+    """10 documentos por el índice (cliente_id, ts_creacion desc, _id desc)."""
+    cur = (db.pedidos.find({"cliente_id": p["cliente_id"]}, _CAMPOS_PEDIDO)
+           .sort([("ts_creacion", -1), ("_id", -1)]).limit(10))
+    return [_pedido(d) for d in cur]
 
 
 def mongo_L5(db, p):
-    raise NotImplementedError
+    """1 documento por _id: el pedido completo."""
+    return _pedido(db.pedidos.find_one({"_id": p["pedido_id"]}, _CAMPOS_PEDIDO))
 
 
 def mongo_L6(db, p):
-    raise NotImplementedError
+    """Agregación sobre los pedidos del año: departamento x mes, subtotales y total."""
+    anio = p["anio"]
+    desde = dt.datetime(anio - 1, 12, 31, 23, 0, tzinfo=UTC)   # 1 de enero, 00:00 Madrid
+    hasta = dt.datetime(anio, 12, 31, 23, 0, tzinfo=UTC)
+    r = next(db.pedidos.aggregate([
+        {"$match": {"ts_creacion": {"$gte": desde, "$lt": hasta},
+                    "estado_actual": {"$ne": "cancelado"}}},
+        {"$unwind": "$lineas"},
+        {"$group": {"_id": {"d": "$lineas.departamento", "p": "$_id",
+                            "m": {"$dateToString": {"format": "%Y-%m", "date": "$ts_creacion",
+                                                    "timezone": "Europe/Madrid"}}},
+                    "v": {"$sum": "$lineas.importe_neto"}}},
+        {"$facet": {
+            "dm": [{"$group": {"_id": {"d": "$_id.d", "m": "$_id.m"},
+                               "pedidos": {"$sum": 1}, "ventas": {"$sum": "$v"}}}],
+            "d": [{"$group": {"_id": {"d": "$_id.d", "p": "$_id.p"}, "v": {"$sum": "$v"}}},
+                  {"$group": {"_id": {"d": "$_id.d"}, "pedidos": {"$sum": 1},
+                              "ventas": {"$sum": "$v"}}}],
+            "t": [{"$group": {"_id": "$_id.p", "v": {"$sum": "$v"}}},
+                  {"$group": {"_id": {}, "pedidos": {"$sum": 1}, "ventas": {"$sum": "$v"}}}]}}],
+        allowDiskUse=True))
+    filas = []
+    for grupo in ("dm", "d", "t"):
+        for f in r[grupo]:
+            filas.append({"departamento": f["_id"].get("d"), "mes": f["_id"].get("m"),
+                          "pedidos": f["pedidos"], "ventas": _dec(f["ventas"])})
+    return filas
 
 
 def mongo_E1(db, p, s):
-    raise NotImplementedError
+    """Transacción: lee k productos; escribe 1 pedido, k stock y 1 cliente."""
+    ahora = dt.datetime.now(UTC)
+    cantidades = dict(p["lineas"])
+    skus = sorted(cantidades)
+    productos = {d["_id"]: d for d in db.productos.find(
+        {"_id": {"$in": skus}},
+        {"precio": 1, "nombre": 1, "version_sk": 1, "vendedor.id": 1, "departamento.nombre": 1},
+        session=s)}
+    lineas, total = [], Decimal(0)
+    for n, sku in enumerate(skus, 1):
+        pr = productos[sku]
+        precio, cant = _dec(pr["precio"]), cantidades[sku]
+        importe = _r2(precio * cant)
+        total += importe
+        lineas.append({"n": n, "sku": sku, "producto_sk": Int64(pr["version_sk"]),
+                       "nombre": pr["nombre"], "vendedor_id": pr["vendedor"]["id"],
+                       "departamento": pr["departamento"]["nombre"], "cantidad": cant,
+                       "precio_unit": Decimal128(precio), "descuento": Decimal128("0.00"),
+                       "importe_neto": Decimal128(importe)})
+    total = _r2(total)
+    # stock: comprobar y restar en la misma operación, siempre en orden de SKU (R.1)
+    for sku in skus:
+        r = db.stock.update_one({"_id": sku, "unidades": {"$gte": cantidades[sku]}},
+                                {"$inc": {"unidades": -cantidades[sku]},
+                                 "$set": {"actualizado": ahora}}, session=s)
+        if r.modified_count != 1:
+            raise RuntimeError("Sin stock suficiente de %s" % sku)
+    db.pedidos.insert_one({
+        "_id": p["pedido_id"], "cliente_id": p["cliente_id"], "canal": p["canal"],
+        "ts_creacion": ahora, "estado_actual": "creado", "metodo_pago": p["metodo_pago"],
+        "importe_total": Decimal128(total), "envio": dict(p["envio"]), "lineas": lineas,
+        "historial": [{"estado": "creado", "ts": ahora, "actor": "sistema"}],
+        "_origen": {"tabla": "pedido", "clave": p["pedido_id"]}, "_esquema": 1}, session=s)
+    # resumen del cliente (patrón computed) y lista de deseos, en una sola actualización
+    c = db.clientes.find_one_and_update(
+        {"_id": p["cliente_id"]},
+        {"$inc": {"resumen_pedidos.n": 1, "resumen_pedidos.gasto": Decimal128(total)},
+         "$pull": {"deseos": {"sku": {"$in": skus}}}},
+        projection={"resumen_pedidos": 1}, return_document=ReturnDocument.AFTER, session=s)
+    segmento = _segmento(c["resumen_pedidos"]["n"], _dec(c["resumen_pedidos"]["gasto"]))
+    db.clientes.update_one({"_id": p["cliente_id"]}, {"$set": {"segmento": segmento}}, session=s)
+    return {"importe_total": total, "segmento": segmento}
 
 
-def mongo_E2(db, p, s):
-    raise NotImplementedError
+def mongo_E2(db, p, s, tamano_lote=None):
+    """Nueva versión de cada producto del vendedor: cierra la versión vigente,
+    crea la nueva (productos_versiones) y actualiza el producto (precio +6 %,
+    garantía +12 meses). Idempotente: no vuelve a versionar lo publicado hoy."""
+    hoy = dt.datetime.combine(dt.date.today(), dt.time(), tzinfo=UTC)
+    ayer = hoy - dt.timedelta(days=1)
+    pendientes = [d for d in db.productos.find(
+        {"vendedor.id": p["vendedor_id"]},
+        {"version_sk": 1, "nombre": 1, "marca": 1, "precio": 1, "categoria.id": 1,
+         "valido_desde": 1}, session=s)
+        if d["valido_desde"].replace(tzinfo=UTC) < hoy]
+    if not pendientes:
+        return {"skus_reversionados": 0}
+    seq = db.contadores.find_one_and_update(
+        {"_id": "producto_sk"}, {"$inc": {"seq": len(pendientes)}},
+        return_document=ReturnDocument.AFTER, session=s)["seq"]
+    primero = seq - len(pendientes) + 1
+    versiones, cambios = [], []
+    for i, d in enumerate(pendientes):
+        sk = Int64(primero + i)
+        precio = Decimal128(_r2(_dec(d["precio"]) * Decimal("1.06")))
+        versiones.append(UpdateOne({"_id": d["version_sk"]},
+                                   {"$set": {"es_actual": False, "valido_hasta": ayer}}))
+        versiones.append(InsertOne({
+            "_id": sk, "sku": d["_id"], "nombre": d["nombre"], "marca": d["marca"],
+            "precio": precio, "categoria_id": d["categoria"]["id"], "vendedor_id": p["vendedor_id"],
+            "valido_desde": hoy, "valido_hasta": None, "es_actual": True,
+            "_origen": {"tabla": "dim_producto", "clave": int(sk)}, "_esquema": 1}))
+        cambios.append(UpdateOne({"_id": d["_id"]},
+                                 {"$set": {"precio": precio, "version_sk": sk, "valido_desde": hoy},
+                                  "$inc": {"atributos.$[g].v": 12}},
+                                 array_filters=[{"g.k": "garantia_meses"}]))
+    lote = tamano_lote or len(cambios)
+    for i in range(0, len(cambios), lote):
+        db.productos_versiones.bulk_write(versiones[2 * i:2 * (i + lote)], ordered=False, session=s)
+        db.productos.bulk_write(cambios[i:i + lote], ordered=False, session=s)
+    return {"skus_reversionados": len(pendientes)}
 
 
 def mongo_E3(db, p, s):
-    raise NotImplementedError
+    """Una sola actualización atómica de un documento: estado + historial."""
+    ramas = [{"case": {"$eq": ["$estado_actual", a]}, "then": b} for a, b in SIGUIENTE.items()]
+    d = db.pedidos.find_one_and_update(
+        {"_id": p["pedido_id"], "estado_actual": {"$in": list(SIGUIENTE)}},
+        [{"$set": {"estado_actual": {"$switch": {"branches": ramas,
+                                                 "default": "$estado_actual"}}}},
+         {"$set": {"historial": {"$concatArrays": [
+             "$historial", [{"estado": "$estado_actual", "ts": "$$NOW", "actor": "sistema"}]]}}}],
+        projection={"estado_actual": 1}, return_document=ReturnDocument.AFTER, session=s)
+    if d is None:      # pedido ya terminado: como el original, se devuelve su estado
+        d = db.pedidos.find_one({"_id": p["pedido_id"]}, {"estado_actual": 1}, session=s)
+    return {"estado_nuevo": d["estado_actual"]}
 
 
 def mongo_E4(db, p, s):
-    raise NotImplementedError
+    """Una sola actualización de un documento: solo cambia el atributo editado."""
+    d = db.productos.find_one_and_update(
+        {"_id": p["sku"]}, {"$inc": {"atributos.$[a].v": p["delta_peso"]}},
+        array_filters=[{"a.k": "peso"}], projection={"atributos": 1},
+        return_document=ReturnDocument.AFTER, session=s)
+    return {"atributos": len(d["atributos"])}
 
 
 MONGO = {

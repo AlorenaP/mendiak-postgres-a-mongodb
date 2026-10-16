@@ -1,0 +1,80 @@
+﻿
+C.1 · Los validadores rechazan lo que no cumple el modelo
+  OK   stock: unidades negativas                                      -> rechazado
+  OK   productos: precio como double, no Decimal128                   -> rechazado
+  OK   productos: 18 atributos (máximo 17, A.2)                       -> rechazado
+  OK   productos: atributo sin la forma {k, v}                        -> rechazado
+  OK   productos: 4 reseñas recientes (subset de 3)                   -> rechazado
+  OK   productos: sin resumen de reseñas                              -> rechazado
+  OK   productos: SKU con formato incorrecto                          -> rechazado
+  OK   productos_versiones: versión sin precio                        -> rechazado
+  OK   resenas: puntuación 6                                          -> rechazado
+  OK   clientes: segmento inexistente                                 -> rechazado
+  OK   clientes: 15 deseos (máximo 14, A.2)                           -> rechazado
+  OK   clientes: idioma no permitido                                  -> rechazado
+  OK   pedidos: estado inexistente                                    -> rechazado
+  OK   pedidos: 41 líneas (máximo 40, A.2)                            -> rechazado
+  OK   pedidos: 6 estados en el historial (máximo 5)                  -> rechazado
+  OK   pedidos: línea con cantidad 0                                  -> rechazado
+  OK   pedidos: importe como texto                                    -> rechazado
+  OK   pedidos: pedido sin líneas                                     -> rechazado
+  OK   pedidos: identificador con formato incorrecto                  -> rechazado
+  OK   pedidos: sin origen (_origen)                                  -> rechazado
+
+C.2 · No se ha perdido ni inventado nada
+  -- documentos por colección
+  OK   productos                                                      mongo 480000 = pg 480000
+  OK   productos_versiones                                            mongo 576000 = pg 576000
+  OK   stock                                                          mongo 480000 = pg 480000
+  OK   resenas                                                        mongo 2100000 = pg 2100000
+  OK   clientes                                                       mongo 200000 = pg 200000
+  OK   pedidos                                                        mongo 600000 = pg 600000
+  -- elementos de los arrays incrustados = filas de origen
+  OK   pedidos.lineas                                                 mongo 1773080 = pg 1773080
+  OK   pedidos.historial                                              mongo 2825031 = pg 2825031
+  OK   clientes.deseos                                                mongo 599994 = pg 599994
+  OK   productos.atributos                                            mongo 7944173 = pg 7944173
+  -- importes
+  OK   suma de importe_total de todos los pedidos                     mongo 871370174.65 = pg 871370174.65
+  OK   suma de importe_neto de todas las líneas                       mongo 871370174.65 = pg 871370174.65
+  OK   pedidos cuya cabecera no es la suma de sus líneas              0
+  -- referencias rotas (en Mongo no hay claves ajenas)
+  OK   reseñas de productos que no existen                            0
+  OK   deseos de productos que no existen                             0
+  OK   stock de productos que no existen                              0
+  OK   pedidos de clientes que no existen                             0
+  OK   líneas que apuntan a versiones inexistentes                    0
+  -- datos precalculados = su origen
+  OK   productos.resenas_resumen = recuento de resenas                0 distintos
+  OK   clientes.resumen_pedidos = pedidos no cancelados               0 distintos
+  OK   top_categoria: una entrada por categoría                       40
+
+C.3 · Tamaño de los documentos ($bsonSize) y de los arrays
+  colección                  docs    media (B)   máximo (B)
+  productos                480000         1852         2288
+  productos_versiones      576000          259          266
+  stock                    480000          129          129
+  resenas                 2100000          385          460
+  top_categoria                40          826          827
+  clientes                 200000          481          993
+  pedidos                  600000         1371        10529
+  array                            máximo
+  pedidos.lineas                       40
+  pedidos.historial                     5
+  productos.atributos                  17
+  productos.resenas_recientes           3
+  clientes.deseos                      14
+  Producto con más reseñas (MEND-000001): 43020 reseñas, documento de 2003 bytes
+
+C.4 · Trazabilidad
+  OK   productos: documentos sin _origen o _esquema                   0
+  OK   productos_versiones: documentos sin _origen o _esquema         0
+  OK   stock: documentos sin _origen o _esquema                       0
+  OK   resenas: documentos sin _origen o _esquema                     0
+  OK   clientes: documentos sin _origen o _esquema                    0
+  OK   pedidos: documentos sin _origen o _esquema                     0
+  OK   pedido de Mongo -> sus filas en PostgreSQL                     {'pedido': 1, 'pedido_linea': 1, 'pedido_estado_hist': 3}
+  OK   producto_sk 480194 -> pedidos que lo contienen                 20 pedidos
+  OK   líneas vendidas con una versión que ya no es la vigente        mongo 198542 = pg 198542
+
+TODO CORRECTO.
